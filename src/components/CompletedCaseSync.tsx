@@ -1,18 +1,38 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatDate } from '../utils/formatters';
 
 /**
- * Reconciles operational case state after the related tenant receivable is fully paid.
- * It only clears collection-related state; unrelated blockers are preserved.
+ * Keeps the operational state of completed/closed cases coherent.
+ * - A fully paid receivable leaves the case ready only for the final "Cerrar caso" action.
+ * - A closed case has no active blocker or pending next-management action.
  */
 export const CompletedCaseSync: React.FC = () => {
   const { cases, receivables, updateGuaranteeCase } = useApp();
-  const synced = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     cases.forEach(c => {
-      if (!c.receivableId || synced.current.has(c.id)) return;
+      if (c.isClosed) {
+        const needsClosedCleanup =
+          c.blockedBy !== 'SIN_BLOQUEO' ||
+          Boolean(c.blockedReasonNotes?.trim()) ||
+          Boolean(c.nextManagement?.trim()) ||
+          Boolean(c.nextManagementDate?.trim()) ||
+          Boolean(c.nextManagementResponsible?.trim());
+
+        if (needsClosedCleanup) {
+          updateGuaranteeCase(c.id, {
+            blockedBy: 'SIN_BLOQUEO',
+            blockedReasonNotes: '',
+            nextManagement: '',
+            nextManagementDate: '',
+            nextManagementResponsible: ''
+          });
+        }
+        return;
+      }
+
+      if (!c.receivableId) return;
 
       const receivable = receivables.find(r => r.id === c.receivableId);
       if (!receivable || receivable.status !== 'PAGADA' || receivable.pendingBalance > 0) return;
@@ -20,17 +40,13 @@ export const CompletedCaseSync: React.FC = () => {
       const hasUnrelatedBlock = c.blockedBy !== 'SIN_BLOQUEO' && c.blockedBy !== 'ARRENDATARIO';
       if (hasUnrelatedBlock) return;
 
-      const needsCleanup =
+      const needsCompletionCleanup =
         c.blockedBy === 'ARRENDATARIO' ||
         c.nextManagement !== 'Cerrar caso' ||
         !c.nextManagementDate?.trim();
 
-      if (!needsCleanup) {
-        synced.current.add(c.id);
-        return;
-      }
+      if (!needsCompletionCleanup) return;
 
-      synced.current.add(c.id);
       const today = formatDate(new Date().toISOString().split('T')[0]);
 
       updateGuaranteeCase(c.id, {
