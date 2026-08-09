@@ -19,6 +19,15 @@ export interface FinancialCalculationResult {
   tenantReceivableAmount: number;
 }
 
+export interface OwnerLiquidationReconciliation {
+  ownerContributionRequired: number;
+  ownerContributionFundedTotal: number;
+  ownerContributionApplied: number;
+  ownerContributionPending: number;
+  refundToTenant: number;
+  reconciliationBalance: number;
+}
+
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
   _settings: SystemSettings
@@ -90,6 +99,59 @@ export function calculateGuaranteeFinances(
     ownerContributionRequired,
     faunaFinancingRequired,
     tenantReceivableAmount
+  };
+}
+
+/**
+ * Reconcilia la liquidación que ve el propietario.
+ * La liquidación es histórica: una recuperación posterior del arrendatario no debe
+ * borrar el aporte que el propietario realizó originalmente para cuadrar el caso.
+ */
+export function calculateOwnerLiquidationReconciliation(
+  c: GuaranteeCase,
+  settings: SystemSettings
+): OwnerLiquidationReconciliation {
+  const fin = calculateGuaranteeFinances(c, settings);
+
+  const ownerFundingMovements = (c.movements || [])
+    .filter(m => m.type === 'APORTE_PROPIETARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+
+  const ownerRecoveries = (c.movements || [])
+    .filter(m => m.type === 'RECUPERACION_PROPIETARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+
+  // Compatibilidad con casos anteriores sin movimiento de origen explícito.
+  const ownerContributionFundedTotal = ownerFundingMovements > 0
+    ? ownerFundingMovements
+    : Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
+
+  const ownerContributionApplied = Math.min(
+    fin.ownerContributionRequired,
+    ownerContributionFundedTotal
+  );
+
+  const ownerContributionPending = Math.max(
+    0,
+    fin.ownerContributionRequired - ownerContributionApplied
+  );
+
+  // La devolución al arrendatario también forma parte de la cuadratura del dinero
+  // que estaba en garantía. Si todo lo requerido fue aportado, el balance debe ser $0.
+  const reconciliationBalance =
+    fin.guaranteeAmount
+    - fin.totalCharges
+    + fin.fullCoverageApplied
+    + ownerContributionApplied
+    - fin.refundToTenant;
+
+  return {
+    ownerContributionRequired: fin.ownerContributionRequired,
+    ownerContributionFundedTotal,
+    ownerContributionApplied,
+    ownerContributionPending,
+    refundToTenant: fin.refundToTenant,
+    reconciliationBalance
   };
 }
 
