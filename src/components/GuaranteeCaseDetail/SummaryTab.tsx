@@ -1,37 +1,25 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { GuaranteeCase, PreparationStatus } from '../../types';
+import { GuaranteeCase } from '../../types';
 import { formatCLP, formatDate, calculateDaysDifference } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
-import {
-  Building,
-  User,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Calendar,
-  Lock,
-  Wrench,
-  Send,
-  Banknote,
-  Receipt
-} from 'lucide-react';
+import { Building, User, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 
 interface SummaryTabProps {
   guaranteeCase: GuaranteeCase;
 }
 
 export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
-  const { changePreparationStatus, updateGuaranteeCase, settings } = useApp();
+  const { updateGuaranteeCase, settings } = useApp();
 
   const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || '');
   const [nextDate, setNextDate] = useState(guaranteeCase.nextManagementDate || '');
-  const [nextResp, setNextResp] = useState(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible);
+  const [nextResp, setNextResp] = useState(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
-  const isOverdue = daysInProcess > 60;
-  const isNearDeadline = daysInProcess >= 45 && daysInProcess <= 60;
+  const isOverdue = daysInProcess > settings.maxLiquidationDays;
+  const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
 
   const handleSaveNextManagement = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,179 +31,132 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
     alert('Próxima gestión actualizada correctamente.');
   };
 
-  return (
-    <div className="space-y-6">
-      
-      {/* SECTION 15: VISUALIZACIÓN RESUMIDA DEL CASO */}
-      <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-md space-y-4">
-        
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* PREPARACIÓN */}
-            <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Preparación (Trabajos Salida)</span>
-              <div className="flex items-center gap-2">
-                <span className={`px-2.5 py-0.5 rounded font-black text-xs uppercase border ${
-                  guaranteeCase.preparationStatus === 'LISTA'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                    : guaranteeCase.preparationStatus === 'REPARANDO'
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                    : 'bg-slate-700 text-slate-300 border-slate-600'
-                }`}>
-                  [ {guaranteeCase.preparationStatus} ]
-                </span>
+  const resultLabel = fin.isSurplus
+    ? `Devolver ${formatCLP(fin.refundToTenant)}`
+    : fin.isInsufficient
+      ? `Debe ${formatCLP(fin.tenantDeficit)}`
+      : 'Sin saldo';
 
-                {guaranteeCase.preparationStatus === 'LISTA' && guaranteeCase.preparationReadyDate && (
-                  <span className="text-[11px] text-emerald-400 font-mono font-semibold">
-                    {guaranteeCase.preparationReadyDate}
-                  </span>
+  return (
+    <div className="space-y-5">
+      <section className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-md space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+          <div className="flex flex-wrap gap-2">
+            <div className="bg-slate-800 px-3 py-2 rounded-xl border border-slate-700">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Preparación</span>
+              <strong className={`text-xs ${guaranteeCase.preparationStatus === 'LISTA' ? 'text-emerald-300' : guaranteeCase.preparationStatus === 'REPARANDO' ? 'text-amber-300' : 'text-slate-200'}`}>
+                {guaranteeCase.preparationStatus}
+              </strong>
+            </div>
+
+            <div className="bg-slate-800 px-3 py-2 rounded-xl border border-slate-700">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Liquidación</span>
+              <strong className={`text-xs ${guaranteeCase.liquidationStatus === 'EMITIDA' ? 'text-purple-300' : guaranteeCase.liquidationStatus === 'LISTA' ? 'text-emerald-300' : 'text-amber-300'}`}>
+                {guaranteeCase.liquidationStatus === 'EN_PREPARACION' ? 'EN PREPARACIÓN' : guaranteeCase.liquidationStatus}
+              </strong>
+            </div>
+
+            <div className="bg-slate-800 px-3 py-2 rounded-xl border border-slate-700">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Resultado</span>
+              <strong className={`text-xs ${fin.isSurplus ? 'text-emerald-300' : fin.isInsufficient ? 'text-rose-300' : 'text-slate-200'}`}>
+                {resultLabel}
+              </strong>
+            </div>
+
+            {guaranteeCase.blockedBy !== 'SIN_BLOQUEO' && (
+              <div className="bg-amber-950/60 px-3 py-2 rounded-xl border border-amber-700/70">
+                <span className="text-[10px] uppercase font-bold text-amber-300 block">Bloqueado por</span>
+                <strong className="text-xs text-amber-100">{guaranteeCase.blockedBy.replace(/_/g, ' ')}</strong>
+                {guaranteeCase.blockedReasonNotes && (
+                  <span className="text-[10px] text-amber-200 block mt-0.5 max-w-xs">{guaranteeCase.blockedReasonNotes}</span>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* LIQUIDACIÓN */}
-            <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Liquidación (Estado)</span>
-              <span className={`px-2.5 py-0.5 rounded font-bold text-xs uppercase border block w-fit ${
-                guaranteeCase.liquidationStatus === 'EMITIDA'
-                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                  : guaranteeCase.liquidationStatus === 'LISTA'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                  : 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-              }`}>
-                [ {guaranteeCase.liquidationStatus === 'EN_PREPARACION' ? 'EN PREPARACIÓN' : guaranteeCase.liquidationStatus} ]
-              </span>
-            </div>
-
-            {/* BLOQUEADO POR */}
-            <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Bloqueado Por</span>
-              <span className={`px-2.5 py-0.5 rounded font-bold text-xs uppercase border block w-fit ${
-                guaranteeCase.blockedBy !== 'SIN_BLOQUEO'
-                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                  : 'bg-slate-700 text-slate-400 border-slate-600'
-              }`}>
-                {guaranteeCase.blockedBy.replace(/_/g, ' ')}
-              </span>
-            </div>
-
-            {/* COMPLETADO BADGE */}
             {guaranteeCase.isCompleted && (
-              <div className="bg-emerald-600 text-white p-3 rounded-xl font-black text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-xs">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>✓ CASO COMPLETADO</span>
+              <div className="bg-emerald-600 px-3 py-2 rounded-xl font-black text-xs uppercase flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4" /> Caso completado
               </div>
             )}
           </div>
 
-          {/* DEADLINE DATES */}
-          <div className="text-right text-xs text-slate-300 space-y-0.5">
-            <div>Recepción: <strong className="text-white font-mono">{formatDate(guaranteeCase.receptionDate)}</strong></div>
-            <div>Límite ({settings.maxLiquidationDays}d): <strong className="text-white font-mono">{formatDate(guaranteeCase.deadlineDate)}</strong></div>
-            {isOverdue && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded border border-rose-800 mt-1">
-                <AlertTriangle className="w-3 h-3" /> VENCIDO ({daysInProcess} días)
+          <div className="text-xs text-slate-300 lg:text-right">
+            <div>Recepción: <strong className="text-white">{formatDate(guaranteeCase.receptionDate)}</strong></div>
+            <div>Límite: <strong className="text-white">{formatDate(guaranteeCase.deadlineDate)}</strong></div>
+            {(isOverdue || isNearDeadline) && (
+              <span className={`inline-flex items-center gap-1 mt-2 px-2 py-1 rounded border font-bold ${isOverdue ? 'bg-rose-950 text-rose-200 border-rose-800' : 'bg-amber-950 text-amber-200 border-amber-800'}`}>
+                <AlertTriangle className="w-3 h-3" />
+                {isOverdue ? `Vencido · ${daysInProcess} días` : `Alerta · ${daysInProcess} días`}
               </span>
             )}
           </div>
         </div>
 
-        {/* PRÓXIMA GESTIÓN DISPLAY */}
-        <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+        <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Próxima Gestión Registrada:</span>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Próxima gestión</span>
             {guaranteeCase.nextManagement ? (
-              <strong className="text-slate-100 text-sm block mt-0.5">{guaranteeCase.nextManagement}</strong>
+              <strong className="text-sm text-white">{guaranteeCase.nextManagement}</strong>
             ) : (
-              <span className="text-amber-400 font-bold flex items-center gap-1 mt-0.5">
-                <AlertTriangle className="w-3.5 h-3.5" /> Sin próxima gestión programada
-              </span>
+              <span className="text-amber-300 text-xs font-bold">Sin próxima gestión programada</span>
             )}
           </div>
-
-          {guaranteeCase.nextManagementDate && (
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 block">Fecha / Responsable:</span>
-              <span className="font-mono font-bold text-emerald-400">
-                {guaranteeCase.nextManagementDate} ({guaranteeCase.nextManagementResponsible || guaranteeCase.responsible})
-              </span>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* FINANCIAL SUMMARY CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">Monto Garantía Custodia</span>
-          <span className="text-xl font-bold text-slate-900 font-mono">{formatCLP(fin.guaranteeAmount)}</span>
-          <span className="text-[11px] text-slate-400 block mt-1">Plan contratado: <strong>{guaranteeCase.plan}</strong></span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">Total Cargos Registrados</span>
-          <span className="text-xl font-bold text-rose-700 font-mono">{formatCLP(fin.totalCharges)}</span>
-          <span className="text-[11px] text-slate-500 block mt-1">{guaranteeCase.charges.length} cargos asociados</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-semibold text-slate-500 uppercase block mb-1">Resultado Liquidación</span>
-          {fin.isSurplus && (
-            <div>
-              <span className="text-xl font-bold text-emerald-700 font-mono">{formatCLP(fin.refundToTenant)}</span>
-              <span className="text-[11px] text-emerald-600 block font-semibold mt-1">Devolución a Arrendatario</span>
-            </div>
-          )}
-          {fin.isExact && (
-            <div>
-              <span className="text-xl font-bold text-slate-700 font-mono">$0</span>
-              <span className="text-[11px] text-slate-500 block mt-1">Garantía Exacta</span>
-            </div>
-          )}
-          {fin.isInsufficient && (
-            <div>
-              <span className="text-xl font-bold text-rose-700 font-mono">-{formatCLP(fin.tenantDeficit)}</span>
-              <span className="text-[11px] text-rose-600 block font-semibold mt-1">Déficit (Por Cobrar)</span>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-xs">
-          <span className="text-xs font-semibold text-slate-600 uppercase block mb-1">Estado de Ejecución</span>
-          <div className="text-xs space-y-1 mt-1 text-slate-700">
-            <div>Devolución: <strong>{guaranteeCase.refund ? guaranteeCase.refund.status : 'N/A'}</strong></div>
-            <div>Por Cobrar: <strong>{guaranteeCase.receivableStatus || 'N/A'}</strong></div>
+          <div className="sm:text-right text-xs">
+            <span className="text-slate-400 block">Fecha / Responsable</span>
+            <strong className="text-emerald-300">
+              {guaranteeCase.nextManagementDate || 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}
+            </strong>
           </div>
         </div>
+      </section>
 
-      </div>
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-[10px] font-bold text-slate-500 uppercase block">Garantía</span>
+          <span className="text-xl font-black text-slate-900 font-mono">{formatCLP(fin.guaranteeAmount)}</span>
+          <span className="text-[11px] text-slate-400 block">Plan {guaranteeCase.plan}</span>
+        </div>
 
-      {/* DETAILS GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        
-        {/* PROPIEDAD */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-[10px] font-bold text-slate-500 uppercase block">Cargos</span>
+          <span className="text-xl font-black text-slate-900 font-mono">{formatCLP(fin.totalCharges)}</span>
+          <span className="text-[11px] text-slate-400 block">{guaranteeCase.charges.length} cargos registrados</span>
+        </div>
+
+        <div className={`p-4 rounded-xl border shadow-xs ${fin.isSurplus ? 'bg-emerald-50 border-emerald-200' : fin.isInsufficient ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+          <span className="text-[10px] font-bold text-slate-500 uppercase block">Resultado</span>
+          <span className={`text-lg font-black ${fin.isSurplus ? 'text-emerald-800' : fin.isInsufficient ? 'text-rose-800' : 'text-slate-800'}`}>
+            {resultLabel}
+          </span>
+        </div>
+
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+          <span className="text-[10px] font-bold text-slate-500 uppercase block">Ejecución</span>
+          <div className="text-xs text-slate-700 mt-1 space-y-1">
+            <div>Devolución: <strong>{guaranteeCase.refund?.status || 'No aplica'}</strong></div>
+            <div>Por cobrar: <strong>{guaranteeCase.receivableStatus?.replace(/_/g, ' ') || 'No aplica'}</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <h4 className="font-bold text-xs uppercase text-slate-700 border-b border-slate-100 pb-2 flex items-center gap-1.5">
-            <Building className="w-4 h-4 text-emerald-600" />
-            Propiedad
+            <Building className="w-4 h-4 text-emerald-600" /> Propiedad
           </h4>
-          <div className="text-xs space-y-1.5 text-slate-700">
+          <div className="text-xs space-y-1.5 text-slate-700 mt-2">
             <div><strong>Dirección:</strong> {guaranteeCase.propertyAddress}</div>
             <div><strong>Unidad:</strong> {guaranteeCase.propertyUnit || 'N/A'}</div>
             <div><strong>Comuna:</strong> {guaranteeCase.propertyComuna}</div>
-            <div><strong>Canon Arriendo:</strong> <span className="font-mono font-bold text-slate-900">{formatCLP(guaranteeCase.monthlyRent)}</span></div>
+            <div><strong>Arriendo:</strong> {formatCLP(guaranteeCase.monthlyRent)}</div>
           </div>
         </div>
 
-        {/* ARRENDATARIO */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <h4 className="font-bold text-xs uppercase text-slate-700 border-b border-slate-100 pb-2 flex items-center gap-1.5">
-            <User className="w-4 h-4 text-emerald-600" />
-            Arrendatario Saliente
+            <User className="w-4 h-4 text-emerald-600" /> Arrendatario
           </h4>
-          <div className="text-xs space-y-1.5 text-slate-700">
+          <div className="text-xs space-y-1.5 text-slate-700 mt-2">
             <div><strong>Nombre:</strong> {guaranteeCase.tenantName}</div>
             <div><strong>RUT:</strong> {guaranteeCase.tenantRut || 'N/A'}</div>
             <div><strong>Email:</strong> {guaranteeCase.tenantEmail || 'N/A'}</div>
@@ -223,36 +164,31 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           </div>
         </div>
 
-        {/* PROPIETARIO */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
           <h4 className="font-bold text-xs uppercase text-slate-700 border-b border-slate-100 pb-2 flex items-center gap-1.5">
-            <User className="w-4 h-4 text-slate-600" />
-            Propietario
+            <User className="w-4 h-4 text-slate-500" /> Propietario
           </h4>
-          <div className="text-xs space-y-1.5 text-slate-700">
+          <div className="text-xs space-y-1.5 text-slate-700 mt-2">
             <div><strong>Nombre:</strong> {guaranteeCase.ownerName}</div>
             <div><strong>RUT:</strong> {guaranteeCase.ownerRut || 'N/A'}</div>
             <div><strong>Email:</strong> {guaranteeCase.ownerEmail || 'N/A'}</div>
             <div><strong>Teléfono:</strong> {guaranteeCase.ownerPhone || 'N/A'}</div>
           </div>
         </div>
+      </section>
 
-      </div>
-
-      {/* PRÓXIMA GESTIÓN EDITOR */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+      <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
         <h4 className="font-bold text-xs uppercase text-slate-700 flex items-center gap-1.5">
-          <Clock className="w-4 h-4 text-emerald-600" />
-          Actualizar Próxima Gestión
+          <Clock className="w-4 h-4 text-emerald-600" /> Actualizar próxima gestión
         </h4>
 
         <form onSubmit={handleSaveNextManagement} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
           <div className="md:col-span-2">
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Detalle de Próxima Gestión *</label>
+            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Acción *</label>
             <input
               type="text"
               required
-              placeholder="Ej. Confirmar costo de pintura..."
+              placeholder="Ej. Confirmar costo de pintura"
               value={nextManagement}
               onChange={(e) => setNextManagement(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
@@ -260,7 +196,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha Programada</label>
+            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha</label>
             <input
               type="text"
               placeholder="DD/MM/AAAA"
@@ -277,23 +213,18 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
               onChange={(e) => setNextResp(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
             >
-              {settings.responsiblesList.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
+              <option value="">Sin responsable</option>
+              {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
 
           <div className="md:col-span-4 text-right pt-2 border-t border-slate-100">
-            <button
-              type="submit"
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer"
-            >
-              Guardar Próxima Gestión
+            <button type="submit" className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer">
+              Guardar próxima gestión
             </button>
           </div>
         </form>
-      </div>
-
+      </section>
     </div>
   );
 };
