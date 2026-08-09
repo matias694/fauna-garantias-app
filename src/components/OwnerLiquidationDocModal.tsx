@@ -2,7 +2,10 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
 import { formatCLP, formatDate } from '../utils/formatters';
-import { calculateGuaranteeFinances } from '../utils/calculations';
+import {
+  calculateGuaranteeFinances,
+  calculateOwnerLiquidationReconciliation
+} from '../utils/calculations';
 import { FaunaIsotipo } from './FaunaBrand';
 import { X, Printer, FileText } from 'lucide-react';
 
@@ -22,11 +25,14 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   if (!isOpen) return null;
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const ownerSettlement = calculateOwnerLiquidationReconciliation(guaranteeCase, settings);
   const todayStr = formatDate(new Date().toISOString().split('T')[0]);
 
   const handlePrint = () => {
     window.print();
   };
+
+  const ownerHasPendingContribution = ownerSettlement.ownerContributionPending > 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -144,23 +150,47 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
 
             {guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0 && (
               <div className="flex justify-between items-center text-xs text-purple-300 pt-1">
-                <span>(+) Cobertura Servicios Plan Full (Aporte Servicio Fauna):</span>
+                <span>(+) Cobertura Adicional Plan Full aplicada a daños:</span>
                 <strong className="font-mono text-sm">+{formatCLP(fin.fullCoverageApplied)}</strong>
               </div>
             )}
 
-            {guaranteeCase.ownerContribution > 0 && (
-              <div className="flex justify-between items-center text-xs text-blue-300 pt-1">
-                <span>(+) Aporte Adelantado por Propietario:</span>
-                <strong className="font-mono text-sm">+{formatCLP(guaranteeCase.ownerContribution)}</strong>
+            {ownerSettlement.refundToTenant > 0 && (
+              <div className="flex justify-between items-center text-xs text-emerald-200 pt-1">
+                <span>(-) Saldo de garantía a devolver al arrendatario:</span>
+                <strong className="font-mono text-sm">-{formatCLP(ownerSettlement.refundToTenant)}</strong>
               </div>
             )}
 
-            <div className="border-t border-slate-700 pt-3 flex justify-between items-center text-sm font-bold">
+            {ownerSettlement.ownerContributionRequired > 0 && (
+              <div className="flex justify-between items-center text-xs text-amber-200 pt-1">
+                <span>Aporte requerido del propietario para completar la liquidación:</span>
+                <strong className="font-mono text-sm">{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>
+              </div>
+            )}
+
+            {ownerSettlement.ownerContributionApplied > 0 && (
+              <div className="flex justify-between items-center text-xs text-blue-300 pt-1">
+                <span>(+) Aporte registrado del propietario aplicado a esta liquidación:</span>
+                <strong className="font-mono text-sm">+{formatCLP(ownerSettlement.ownerContributionApplied)}</strong>
+              </div>
+            )}
+
+            <div className="border-t border-slate-700 pt-3 flex justify-between items-center text-sm font-bold gap-4">
               <span>RESULTADO FINAL PROPIETARIO:</span>
-              <span className="font-mono text-emerald-400 text-lg">$0 (Gastos Cubiertos Conforme)</span>
+              {ownerHasPendingContribution ? (
+                <span className="font-mono text-amber-300 text-right text-base">
+                  {formatCLP(ownerSettlement.ownerContributionPending)} PENDIENTE DE APORTE
+                </span>
+              ) : (
+                <span className="font-mono text-emerald-400 text-lg">$0 (Liquidación Cuadrada)</span>
+              )}
             </div>
           </div>
+
+          <p className="text-[10px] text-slate-500 leading-relaxed">
+            Este informe refleja la liquidación original del contrato. Los pagos posteriores del arrendatario y las recuperaciones internas no modifican los montos originalmente aplicados a esta liquidación.
+          </p>
 
         </div>
 
