@@ -7,7 +7,7 @@ import {
   calculateOwnerLiquidationReconciliation
 } from '../utils/calculations';
 import { FaunaIsotipo } from './FaunaBrand';
-import { X, Printer, FileText } from 'lucide-react';
+import { X, Printer, FileText, ShieldCheck } from 'lucide-react';
 
 interface OwnerLiquidationDocModalProps {
   isOpen?: boolean;
@@ -33,6 +33,8 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   };
 
   const ownerHasPendingContribution = ownerSettlement.ownerContributionPending > 0;
+  const hasFullBenefit = guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0;
+  const ownerRequiredWithoutFull = ownerSettlement.ownerContributionRequired + fin.fullCoverageApplied;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -148,9 +150,9 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               <strong className="font-mono text-sm text-rose-300">-{formatCLP(fin.totalCharges)}</strong>
             </div>
 
-            {guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0 && (
+            {hasFullBenefit && (
               <div className="flex justify-between items-center text-xs text-purple-300 pt-1">
-                <span>(+) Cobertura Adicional Plan Full aplicada a daños:</span>
+                <span>(+) Beneficio Plan Full – cobertura adicional de daños:</span>
                 <strong className="font-mono text-sm">+{formatCLP(fin.fullCoverageApplied)}</strong>
               </div>
             )}
@@ -187,6 +189,27 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               )}
             </div>
           </div>
+
+          {hasFullBenefit && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2 text-emerald-950">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="block text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Beneficio Plan Full aplicado</span>
+                  <strong className="text-sm">Fauna cubrió {formatCLP(fin.fullCoverageApplied)} adicionales en daños de salida.</strong>
+                </div>
+              </div>
+              <p className="text-xs leading-relaxed text-emerald-900">
+                Sin esta cobertura, el monto que habría debido financiar el propietario para completar esta liquidación habría sido de <strong>{formatCLP(ownerRequiredWithoutFull)}</strong>. Gracias al Plan Full, ese requerimiento se redujo a <strong>{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>.
+              </p>
+              <div className="flex items-center justify-between gap-4 border-t border-emerald-200 pt-2">
+                <span className="text-xs font-bold">Beneficio directo aplicado en esta salida:</span>
+                <strong className="font-mono text-base text-emerald-700">{formatCLP(fin.fullCoverageApplied)}</strong>
+              </div>
+            </div>
+          )}
 
           <p className="text-[10px] text-slate-500 leading-relaxed">
             Este informe refleja la liquidación original del contrato. Los pagos posteriores del arrendatario y las recuperaciones internas no modifican los montos originalmente aplicados a esta liquidación.
