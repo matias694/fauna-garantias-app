@@ -27,6 +27,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
   const isOverdue = daysInProcess > settings.maxLiquidationDays;
   const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
+  const shouldShowDeadlineAlert = !guaranteeCase.isCompleted && !guaranteeCase.isClosed && (isOverdue || isNearDeadline);
 
   const handleSaveNextManagement = (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +96,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           <div className="text-xs text-slate-300 lg:text-right">
             <div>Recepción: <strong className="text-white">{formatDate(guaranteeCase.receptionDate)}</strong></div>
             <div>Límite: <strong className="text-white">{formatDate(guaranteeCase.deadlineDate)}</strong></div>
-            {(isOverdue || isNearDeadline) && (
+            {shouldShowDeadlineAlert && (
               <span className={`inline-flex items-center gap-1 mt-2 px-2 py-1 rounded border font-bold ${isOverdue ? 'bg-rose-950 text-rose-200 border-rose-800' : 'bg-amber-950 text-amber-200 border-amber-800'}`}>
                 <AlertTriangle className="w-3 h-3" />
                 {isOverdue ? `Vencido · ${daysInProcess} días` : `Alerta · ${daysInProcess} días`}
@@ -104,22 +105,37 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           </div>
         </div>
 
-        <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Próxima gestión</span>
-            {guaranteeCase.nextManagement ? (
-              <strong className="text-sm text-white">{guaranteeCase.nextManagement}</strong>
-            ) : (
-              <span className="text-amber-300 text-xs font-bold">Sin próxima gestión programada</span>
-            )}
+        {guaranteeCase.isClosed ? (
+          <div className="bg-emerald-950/40 p-3.5 rounded-xl border border-emerald-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-emerald-300 block">Caso cerrado</span>
+              <strong className="text-sm text-white">Sin gestiones pendientes</strong>
+            </div>
+            <div className="sm:text-right text-xs">
+              <span className="text-slate-400 block">Cierre / Responsable</span>
+              <strong className="text-emerald-300">
+                {guaranteeCase.closedAt || 'Fecha no registrada'} · {guaranteeCase.closedBy || 'Sin responsable'}
+              </strong>
+            </div>
           </div>
-          <div className="sm:text-right text-xs">
-            <span className="text-slate-400 block">Fecha / Responsable</span>
-            <strong className="text-emerald-300">
-              {guaranteeCase.nextManagementDate || 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}
-            </strong>
+        ) : (
+          <div className="bg-slate-800/80 p-3.5 rounded-xl border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Próxima gestión</span>
+              {guaranteeCase.nextManagement ? (
+                <strong className="text-sm text-white">{guaranteeCase.nextManagement}</strong>
+              ) : (
+                <span className="text-amber-300 text-xs font-bold">Sin próxima gestión programada</span>
+              )}
+            </div>
+            <div className="sm:text-right text-xs">
+              <span className="text-slate-400 block">Fecha / Responsable</span>
+              <strong className="text-emerald-300">
+                {guaranteeCase.nextManagementDate || 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}
+              </strong>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -197,54 +213,56 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
         </div>
       </section>
 
-      <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-        <h4 className="font-bold text-xs uppercase text-slate-700 flex items-center gap-1.5">
-          <Clock className="w-4 h-4 text-emerald-600" /> Actualizar próxima gestión
-        </h4>
+      {!guaranteeCase.isClosed && (
+        <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+          <h4 className="font-bold text-xs uppercase text-slate-700 flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-emerald-600" /> Actualizar próxima gestión
+          </h4>
 
-        <form onSubmit={handleSaveNextManagement} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
-          <div className="md:col-span-2">
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Acción *</label>
-            <input
-              type="text"
-              required
-              placeholder="Ej. Confirmar costo de pintura"
-              value={nextManagement}
-              onChange={(e) => setNextManagement(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
-            />
-          </div>
+          <form onSubmit={handleSaveNextManagement} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+            <div className="md:col-span-2">
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Acción *</label>
+              <input
+                type="text"
+                required
+                placeholder="Ej. Confirmar costo de pintura"
+                value={nextManagement}
+                onChange={(e) => setNextManagement(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
+              />
+            </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha</label>
-            <input
-              type="text"
-              placeholder="DD/MM/AAAA"
-              value={nextDate}
-              onChange={(e) => setNextDate(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
-            />
-          </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Fecha</label>
+              <input
+                type="text"
+                placeholder="DD/MM/AAAA"
+                value={nextDate}
+                onChange={(e) => setNextDate(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
+              />
+            </div>
 
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">Responsable</label>
-            <select
-              value={nextResp}
-              onChange={(e) => setNextResp(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
-            >
-              <option value="">Sin responsable</option>
-              {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">Responsable</label>
+              <select
+                value={nextResp}
+                onChange={(e) => setNextResp(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
+              >
+                <option value="">Sin responsable</option>
+                {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
 
-          <div className="md:col-span-4 text-right pt-2 border-t border-slate-100">
-            <button type="submit" className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer">
-              Guardar próxima gestión
-            </button>
-          </div>
-        </form>
-      </section>
+            <div className="md:col-span-4 text-right pt-2 border-t border-slate-100">
+              <button type="submit" className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer">
+                Guardar próxima gestión
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
     </div>
   );
 };
