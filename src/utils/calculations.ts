@@ -19,6 +19,16 @@ export interface FinancialCalculationResult {
   tenantReceivableAmount: number;
 }
 
+export interface FundingReadiness {
+  ownerRequired: number;
+  ownerProvisionedTotal: number;
+  ownerPendingProvision: number;
+  fullCoverageRequired: number;
+  fullCoverageExecutedTotal: number;
+  fullCoveragePendingExecution: number;
+  readyToConfirm: boolean;
+}
+
 export interface OwnerLiquidationReconciliation {
   ownerContributionRequired: number;
   ownerContributionFundedTotal: number;
@@ -69,9 +79,9 @@ export function calculateGuaranteeFinances(
     fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
   }
 
-  // Estos montos son NECESIDADES de la liquidación, no desembolsos realizados.
-  // Los desembolsos efectivos siguen viviendo en c.ownerContribution y c.faunaFinancing
-  // y solo deben aumentar cuando se registra el movimiento financiero correspondiente.
+  // Nombres internos legacy: ownerContributionRequired y faunaFinancingRequired.
+  // Operativamente representan la diferencia que debe provisionar el propietario
+  // y la cobertura Full que Fauna debe ejecutar, respectivamente.
   const ownerContributionRequired = isInsufficient
     ? Math.max(0, tenantDeficit - fullCoverageApplied)
     : 0;
@@ -103,28 +113,68 @@ export function calculateGuaranteeFinances(
 }
 
 /**
+ * Determina si los fondos necesarios para sostener la liquidación ya ocurrieron.
+ * Una promesa o aprobación del propietario no cuenta como fondos: solo una provisión
+ * efectivamente recibida. Del mismo modo, la cobertura Full solo se considera ejecutada
+ * cuando existe el desembolso/movimiento real de Fauna.
+ */
+export function calculateFundingReadiness(
+  c: GuaranteeCase,
+  settings: SystemSettings
+): FundingReadiness {
+  const fin = calculateGuaranteeFinances(c, settings);
+
+  const ownerProvisionMovements = (c.movements || [])
+    .filter(m => m.type === 'APORTE_PROPIETARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  const ownerRecoveries = (c.movements || [])
+    .filter(m => m.type === 'RECUPERACION_PROPIETARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+
+  const fullCoverageExecutionMovements = (c.movements || [])
+    .filter(m => m.type === 'FINANCIAMIENTO_FAUNA')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  const faunaRecoveries = (c.movements || [])
+    .filter(m => m.type === 'RECUPERACION_FAUNA')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+
+  // Compatibilidad con casos legacy que podían guardar solo el saldo vigente.
+  const ownerProvisionedTotal = ownerProvisionMovements > 0
+    ? ownerProvisionMovements
+    : Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
+  const fullCoverageExecutedTotal = fullCoverageExecutionMovements > 0
+    ? fullCoverageExecutionMovements
+    : Math.max(0, (c.faunaFinancing || 0) + faunaRecoveries);
+
+  const ownerRequired = fin.ownerContributionRequired;
+  const fullCoverageRequired = fin.faunaFinancingRequired;
+  const ownerPendingProvision = Math.max(0, ownerRequired - ownerProvisionedTotal);
+  const fullCoveragePendingExecution = Math.max(0, fullCoverageRequired - fullCoverageExecutedTotal);
+
+  return {
+    ownerRequired,
+    ownerProvisionedTotal,
+    ownerPendingProvision,
+    fullCoverageRequired,
+    fullCoverageExecutedTotal,
+    fullCoveragePendingExecution,
+    readyToConfirm: ownerPendingProvision === 0 && fullCoveragePendingExecution === 0
+  };
+}
+
+/**
  * Reconcilia la liquidación que ve el propietario.
  * La liquidación es histórica: una recuperación posterior del arrendatario no debe
- * borrar el aporte que el propietario realizó originalmente para cuadrar el caso.
+ * borrar los fondos que el propietario provisionó originalmente para cuadrar el caso.
  */
 export function calculateOwnerLiquidationReconciliation(
   c: GuaranteeCase,
   settings: SystemSettings
 ): OwnerLiquidationReconciliation {
   const fin = calculateGuaranteeFinances(c, settings);
+  const readiness = calculateFundingReadiness(c, settings);
 
-  const ownerFundingMovements = (c.movements || [])
-    .filter(m => m.type === 'APORTE_PROPIETARIO')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-
-  const ownerRecoveries = (c.movements || [])
-    .filter(m => m.type === 'RECUPERACION_PROPIETARIO')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-
-  // Compatibilidad con casos anteriores sin movimiento de origen explícito.
-  const ownerContributionFundedTotal = ownerFundingMovements > 0
-    ? ownerFundingMovements
-    : Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
+  const ownerContributionFundedTotal = readiness.ownerProvisionedTotal;
 
   const ownerContributionApplied = Math.min(
     fin.ownerContributionRequired,
@@ -137,7 +187,7 @@ export function calculateOwnerLiquidationReconciliation(
   );
 
   // La devolución al arrendatario también forma parte de la cuadratura del dinero
-  // que estaba en garantía. Si todo lo requerido fue aportado, el balance debe ser $0.
+  // que estaba en garantía. Si todo lo requerido fue provisionado, el balance debe ser $0.
   const reconciliationBalance =
     fin.guaranteeAmount
     - fin.totalCharges
@@ -157,8 +207,8 @@ export function calculateOwnerLiquidationReconciliation(
 
 /**
  * Distribuye pagos posteriores del arrendatario:
- * 1) recuperar aporte del propietario;
- * 2) recuperar financiamiento Fauna;
+ * 1) devolver la provisión efectivamente realizada por el propietario;
+ * 2) recuperar la cobertura Full efectivamente desembolsada por Fauna;
  * 3) el remanente se aplica al resto de la deuda del arrendatario.
  */
 export function calculatePaymentDistribution(

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  calculateFundingReadiness,
   calculateGuaranteeFinances,
   calculateOwnerLiquidationReconciliation,
   calculatePaymentDistribution
@@ -115,12 +116,15 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   });
   const fin = calculateGuaranteeFinances(c, settings);
   const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
+  const readiness = calculateFundingReadiness(c, settings);
   assert.equal(fin.isInsufficient, true);
   assert.equal(fin.tenantDeficit, 300000);
   assert.equal(fin.ownerContributionRequired, 300000);
   assert.equal(fin.faunaFinancingRequired, 0);
   assert.equal(ownerSettlement.ownerContributionPending, 300000);
   assert.equal(ownerSettlement.reconciliationBalance, -300000);
+  assert.equal(readiness.ownerPendingProvision, 300000);
+  assert.equal(readiness.readyToConfirm, false);
   assert.equal(isCaseCompleted(c), false);
   assert.equal(isCaseCompleted({ ...c, receivableStatus: 'PAGADA' }), true);
   assert.equal(isCaseCompleted({ ...c, receivableStatus: 'INCOBRABLE' }), true);
@@ -133,8 +137,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(dist.remainingFaunaFinancing, 0);
 }
 
-// 4) Plan Full: cobertura adicional = 100% del monto de garantía, no del arriendo
-// y los montos requeridos no implican que ya hayan sido desembolsados.
+// 4) Plan Full: cobertura adicional = 100% del monto de garantía, no del arriendo.
 {
   const c = baseCase({
     plan: 'FULL',
@@ -155,6 +158,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   });
   const fin = calculateGuaranteeFinances(c, settings);
   const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
+  const readiness = calculateFundingReadiness(c, settings);
   assert.equal(fin.damageCharges, 800000);
   assert.equal(fin.serviceCharges, 100000);
   assert.equal(fin.fullCoverageLimit, 400000);
@@ -164,11 +168,14 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(fin.faunaFinancingRequired, 400000);
   assert.equal(ownerSettlement.ownerContributionPending, 100000);
   assert.equal(ownerSettlement.reconciliationBalance, -100000);
+  assert.equal(readiness.ownerPendingProvision, 100000);
+  assert.equal(readiness.fullCoveragePendingExecution, 400000);
+  assert.equal(readiness.readyToConfirm, false);
   assert.equal(c.ownerContribution, 0);
   assert.equal(c.faunaFinancing, 0);
 }
 
-// 5) Liquidación propietario Full conserva el aporte histórico aunque después sea recuperado.
+// 5) Liquidación propietario Full conserva la provisión histórica aunque después sea recuperada.
 {
   const c = baseCase({
     plan: 'FULL',
@@ -188,8 +195,8 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     movements: [
       {
         id: 'MOV-1', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:00',
-        type: 'APORTE_PROPIETARIO', description: 'Aporte propietario', amount: 100000,
-        user: 'Usuario de prueba', reference: 'APORTE', observation: ''
+        type: 'APORTE_PROPIETARIO', description: 'Provisión propietario', amount: 100000,
+        user: 'Usuario de prueba', reference: 'PROVISION', observation: ''
       },
       {
         id: 'MOV-2', caseId: 'GAR-TEST', date: '02/07/2026', time: '10:00',
@@ -207,4 +214,73 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(ownerSettlement.reconciliationBalance, 0);
 }
 
-console.log('✓ Reglas de negocio principales validadas: 5 escenarios OK');
+// 6) Estándar: una aprobación sin dinero no basta; la provisión efectiva habilita los fondos.
+{
+  const withoutProvision = baseCase({
+    plan: 'ESTANDAR',
+    liquidationStatus: 'LISTA',
+    guaranteeAmount: 400000,
+    charges: [{
+      id: 'CHG-8', category: 'REPARACIONES', description: 'Trabajos ficticios', amount: 600000,
+      date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+    }]
+  });
+  const pending = calculateFundingReadiness(withoutProvision, settings);
+  assert.equal(pending.ownerRequired, 200000);
+  assert.equal(pending.ownerProvisionedTotal, 0);
+  assert.equal(pending.ownerPendingProvision, 200000);
+  assert.equal(pending.readyToConfirm, false);
+
+  const withProvision = {
+    ...withoutProvision,
+    ownerContribution: 200000,
+    movements: [{
+      id: 'MOV-3', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:00',
+      type: 'APORTE_PROPIETARIO' as const, description: 'Provisión de fondos', amount: 200000,
+      user: 'Usuario de prueba', reference: 'PROVISION', observation: ''
+    }]
+  };
+  const ready = calculateFundingReadiness(withProvision, settings);
+  assert.equal(ready.ownerPendingProvision, 0);
+  assert.equal(ready.readyToConfirm, true);
+}
+
+// 7) Full: deben existir tanto la provisión del propietario como la ejecución real de la cobertura.
+{
+  const c = baseCase({
+    plan: 'FULL',
+    liquidationStatus: 'LISTA',
+    guaranteeAmount: 400000,
+    ownerContribution: 100000,
+    faunaFinancing: 400000,
+    charges: [
+      {
+        id: 'CHG-9', category: 'REPARACIONES', description: 'Daños ficticios', amount: 800000,
+        date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+      },
+      {
+        id: 'CHG-10', category: 'GASTOS_COMUNES', description: 'Gastos comunes ficticios', amount: 100000,
+        date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+      }
+    ],
+    movements: [
+      {
+        id: 'MOV-4', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:00',
+        type: 'APORTE_PROPIETARIO', description: 'Provisión de fondos', amount: 100000,
+        user: 'Usuario de prueba', reference: 'PROVISION', observation: ''
+      },
+      {
+        id: 'MOV-5', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:05',
+        type: 'FINANCIAMIENTO_FAUNA', description: 'Ejecución cobertura Full', amount: 400000,
+        user: 'Usuario de prueba', reference: 'FULL', observation: ''
+      }
+    ]
+  });
+
+  const readiness = calculateFundingReadiness(c, settings);
+  assert.equal(readiness.ownerPendingProvision, 0);
+  assert.equal(readiness.fullCoveragePendingExecution, 0);
+  assert.equal(readiness.readyToConfirm, true);
+}
+
+console.log('✓ Reglas de negocio principales validadas: 7 escenarios OK');

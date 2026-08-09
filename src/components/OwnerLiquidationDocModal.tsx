@@ -32,7 +32,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
     window.print();
   };
 
-  const ownerHasPendingContribution = ownerSettlement.ownerContributionPending > 0;
+  const ownerHasPendingProvision = ownerSettlement.ownerContributionPending > 0;
   const hasFullBenefit = guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0;
   const ownerRequiredWithoutFull = ownerSettlement.ownerContributionRequired + fin.fullCoverageApplied;
 
@@ -166,23 +166,23 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
 
             {ownerSettlement.ownerContributionRequired > 0 && (
               <div className="flex justify-between items-center text-xs text-amber-200 pt-1">
-                <span>Aporte requerido del propietario para completar la liquidación:</span>
+                <span>Diferencia a cargo del propietario para completar la liquidación:</span>
                 <strong className="font-mono text-sm">{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>
               </div>
             )}
 
             {ownerSettlement.ownerContributionApplied > 0 && (
               <div className="flex justify-between items-center text-xs text-blue-300 pt-1">
-                <span>(+) Aporte registrado del propietario aplicado a esta liquidación:</span>
+                <span>(+) Fondos provisionados por el propietario aplicados a esta liquidación:</span>
                 <strong className="font-mono text-sm">+{formatCLP(ownerSettlement.ownerContributionApplied)}</strong>
               </div>
             )}
 
             <div className="border-t border-slate-700 pt-3 flex justify-between items-center text-sm font-bold gap-4">
               <span>RESULTADO FINAL PROPIETARIO:</span>
-              {ownerHasPendingContribution ? (
+              {ownerHasPendingProvision ? (
                 <span className="font-mono text-amber-300 text-right text-base">
-                  {formatCLP(ownerSettlement.ownerContributionPending)} PENDIENTE DE APORTE
+                  {formatCLP(ownerSettlement.ownerContributionPending)} PENDIENTE DE PROVISIÓN
                 </span>
               ) : (
                 <span className="font-mono text-emerald-400 text-lg">$0 (Liquidación Cuadrada)</span>
@@ -202,7 +202,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 </div>
               </div>
               <p className="text-xs leading-relaxed text-emerald-900">
-                Sin esta cobertura, el monto que habría debido financiar el propietario para completar esta liquidación habría sido de <strong>{formatCLP(ownerRequiredWithoutFull)}</strong>. Gracias al Plan Full, ese requerimiento se redujo a <strong>{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>.
+                Sin esta cobertura, la diferencia a cargo del propietario para completar esta liquidación habría sido de <strong>{formatCLP(ownerRequiredWithoutFull)}</strong>. Gracias al Plan Full, esa diferencia se redujo a <strong>{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>.
               </p>
               <div className="flex items-center justify-between gap-4 border-t border-emerald-200 pt-2">
                 <span className="text-xs font-bold">Beneficio directo aplicado en esta salida:</span>

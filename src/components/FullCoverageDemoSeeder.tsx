@@ -39,7 +39,7 @@ export const FullCoverageDemoSeeder: React.FC = () => {
       preparationStatus: 'PENDIENTE',
       liquidationStatus: 'EN_PREPARACION',
       blockedBy: 'SIN_BLOQUEO',
-      nextManagement: 'Emitir liquidación definitiva',
+      nextManagement: 'Completar fondos y confirmar liquidación',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
     });
@@ -79,12 +79,12 @@ export const FullCoverageDemoSeeder: React.FC = () => {
           photos: []
         }
       ],
-      // La liquidación requiere $100.000 del propietario y permite hasta $400.000 de cobertura Full,
-      // pero el caso parte SIN aportes ni desembolsos efectivos registrados.
+      // La liquidación requiere $100.000 de provisión del propietario y permite hasta
+      // $400.000 de cobertura Full, pero parte sin fondos ni cobertura ejecutada.
       ownerContribution: 0,
       fullCoverageApplied: 400000,
       faunaFinancing: 0,
-      nextManagement: 'Emitir liquidación definitiva',
+      nextManagement: 'Completar fondos y confirmar liquidación',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
     });

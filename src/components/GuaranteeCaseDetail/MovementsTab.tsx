@@ -2,11 +2,25 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, FinancialMovementType } from '../../types';
 import { formatCLP, formatDate } from '../../utils/formatters';
-import { History, Plus, FileSpreadsheet, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Plus, FileSpreadsheet } from 'lucide-react';
 
 interface MovementsTabProps {
   guaranteeCase: GuaranteeCase;
 }
+
+const movementLabel = (type: FinancialMovementType) => {
+  const labels: Partial<Record<FinancialMovementType, string>> = {
+    APORTE_PROPIETARIO: 'PROVISIÓN PROPIETARIO',
+    FINANCIAMIENTO_FAUNA: 'EJECUCIÓN COBERTURA FULL',
+    RECUPERACION_PROPIETARIO: 'DEVOLUCIÓN PROVISIÓN PROPIETARIO',
+    RECUPERACION_FAUNA: 'RECUPERACIÓN COBERTURA FULL',
+    DEVOLUCION_ARRENDATARIO: 'DEVOLUCIÓN ARRENDATARIO',
+    PAGO_ARRENDATARIO: 'PAGO ARRENDATARIO',
+    COBERTURA_FULL: 'COBERTURA FULL'
+  };
+
+  return labels[type] || type.replace(/_/g, ' ');
+};
 
 export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => {
   const { addFinancialMovement, userRole } = useApp();
@@ -48,8 +62,6 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
 
   return (
     <div className="space-y-6">
-      
-      {/* Header Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -70,7 +82,6 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
         </button>
       </div>
 
-      {/* Movements Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         {guaranteeCase.movements.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs">
@@ -109,7 +120,7 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
                           mov.type === 'RECUPERACION_FAUNA' ? 'bg-teal-50 text-teal-800 border-teal-200' :
                           'bg-slate-100 text-slate-800 border-slate-200'
                         }`}>
-                          {mov.type.replace(/_/g, ' ')}
+                          {movementLabel(mov.type)}
                         </span>
                       </td>
 
@@ -135,7 +146,6 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
         )}
       </div>
 
-      {/* Manual Movement Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-100">
@@ -154,12 +164,12 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
                   <option value="GARANTIA">Garantía</option>
                   <option value="CARGO">Cargo</option>
                   <option value="DEVOLUCION_ARRENDATARIO">Devolución Arrendatario</option>
-                  <option value="APORTE_PROPIETARIO">Aporte Propietario</option>
+                  <option value="APORTE_PROPIETARIO">Provisión Propietario</option>
                   <option value="COBERTURA_FULL">Cobertura Full</option>
-                  <option value="FINANCIAMIENTO_FAUNA">Financiamiento Fauna</option>
+                  <option value="FINANCIAMIENTO_FAUNA">Ejecución Cobertura Full</option>
                   <option value="PAGO_ARRENDATARIO">Pago Arrendatario</option>
-                  <option value="RECUPERACION_PROPIETARIO">Recuperación Propietario</option>
-                  <option value="RECUPERACION_FAUNA">Recuperación Fauna</option>
+                  <option value="RECUPERACION_PROPIETARIO">Devolución Provisión Propietario</option>
+                  <option value="RECUPERACION_FAUNA">Recuperación Cobertura Full</option>
                   <option value="AJUSTE">Ajuste Contable</option>
                 </select>
               </div>
@@ -169,7 +179,7 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
                 <input
                   type="text"
                   required
-                  placeholder="Ej. Transferencia de devolución, abono manual..."
+                  placeholder="Ej. Transferencia de devolución, provisión recibida..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
@@ -231,7 +241,6 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({ guaranteeCase }) => 
           </div>
         </div>
       )}
-
     </div>
   );
 };
