@@ -1,0 +1,31 @@
+name: Validar Fauna Garantías
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Validar TypeScript
+        run: npm run lint
+
+      - name: Probar reglas de negocio
+        run: npm run test:rules
+
+      - name: Compilar aplicación
+        run: npm run build
