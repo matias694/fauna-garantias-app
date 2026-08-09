@@ -21,7 +21,7 @@ export interface FollowUpComment {
   comment: string;
   area: FollowUpArea;
   user: string;
-  createdAt: string; // Auto timestamp (e.g. DD/MM/AAAA HH:mm)
+  createdAt: string;
   nextManagement?: string;
   nextManagementDate?: string;
   nextManagementResponsible?: string;
@@ -40,7 +40,7 @@ export interface TenantRefund {
   user?: string;
 }
 
-export type BlockedByReason = 
+export type BlockedByReason =
   | 'SIN_BLOQUEO'
   | 'PROPIETARIO'
   | 'ARRENDATARIO'
@@ -51,7 +51,7 @@ export type BlockedByReason =
 
 export type AdministrationPlan = 'ESTANDAR' | 'PLUS' | 'FULL';
 
-export type RepairCategory = 
+export type RepairCategory =
   | 'PINTURA'
   | 'REPARACION'
   | 'LIMPIEZA'
@@ -61,7 +61,7 @@ export type RepairCategory =
   | 'ELECTRICIDAD'
   | 'OTRO';
 
-export type RepairStatus = 'PENDIENTE' | 'EN_EJECUCION' | 'TERMINADA';
+export type RepairStatus = 'PENDIENTE' | 'EN_EJECUCION' | 'TERMINADA' | 'CANCELADA';
 
 export interface ExitRepair {
   id: string;
@@ -81,7 +81,7 @@ export interface ExitRepair {
   linkedChargeId?: string;
 }
 
-export type ChargeCategory = 
+export type ChargeCategory =
   | 'REPARACIONES'
   | 'PINTURA'
   | 'LIMPIEZA'
@@ -108,7 +108,7 @@ export interface Charge {
   photos: string[];
 }
 
-export type FinancialMovementType = 
+export type FinancialMovementType =
   | 'GARANTIA'
   | 'CARGO'
   | 'DEVOLUCION_ARRENDATARIO'
@@ -118,6 +118,7 @@ export type FinancialMovementType =
   | 'PAGO_ARRENDATARIO'
   | 'RECUPERACION_PROPIETARIO'
   | 'RECUPERACION_FAUNA'
+  | 'SALDO_PAGO_ARRENDATARIO'
   | 'AJUSTE';
 
 export interface FinancialMovement {
@@ -133,15 +134,15 @@ export interface FinancialMovement {
   observation: string;
 }
 
-export type ReceivableStatus = 
+export type ReceivableStatus =
   | 'PENDIENTE'
   | 'PAGO_PARCIAL'
   | 'PAGADA'
   | 'INCOBRABLE';
 
 export interface Receivable {
-  id: string; // e.g. REC-0001
-  caseId: string; // e.g. GAR-0001
+  id: string;
+  caseId: string;
   tenantName: string;
   tenantRut: string;
   tenantPhone: string;
@@ -183,7 +184,7 @@ export interface CaseAttachment {
 }
 
 export interface GuaranteeCase {
-  id: string; // GAR-0001
+  id: string;
   propertyAddress: string;
   propertyComuna: string;
   propertyUnit: string;
@@ -201,38 +202,38 @@ export interface GuaranteeCase {
   contractEndDate: string;
   guaranteeAmount: number;
   receptionDate: string;
-  deadlineDate: string; // Reception + 60 days
-  alertDate: string; // Reception + 45 days
+  deadlineDate: string;
+  alertDate: string;
   responsible: string;
   initialNotes: string;
-  
+
   preparationStatus: PreparationStatus;
   preparationReadyDate?: string;
-  
+
   liquidationStatus: LiquidationStatus;
   requirements: LiquidationRequirement[];
-  
+
   blockedBy: BlockedByReason;
   blockedReasonNotes?: string;
-  
+
   nextManagement: string;
   nextManagementDate: string;
   nextManagementResponsible: string;
-  
+
   followUps: FollowUpComment[];
   refund?: TenantRefund;
   receivableId?: string;
   receivableStatus?: ReceivableStatus;
-  
+
   repairs: ExitRepair[];
   charges: Charge[];
   attachments: CaseAttachment[];
   movements: FinancialMovement[];
-  
+
   ownerContribution: number;
   fullCoverageApplied: number;
   faunaFinancing: number;
-  
+
   isCompleted?: boolean;
   isClosed?: boolean;
   closedAt?: string;

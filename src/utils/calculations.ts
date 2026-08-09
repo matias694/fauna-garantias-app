@@ -5,34 +5,26 @@ export interface FinancialCalculationResult {
   totalCharges: number;
   damageCharges: number;
   serviceCharges: number;
-  rawBalance: number; // guaranteeAmount - totalCharges
+  rawBalance: number;
   guaranteeUsed: number;
-  
-  // Scenarios
-  isSurplus: boolean; // rawBalance > 0
-  isExact: boolean;   // rawBalance === 0
-  isInsufficient: boolean; // rawBalance < 0
-  
-  refundToTenant: number; // Amount to return to tenant
-  tenantDeficit: number;  // Total deficit (amount tenant owes)
-
-  // Plan Full breakdown
+  isSurplus: boolean;
+  isExact: boolean;
+  isInsufficient: boolean;
+  refundToTenant: number;
+  tenantDeficit: number;
   fullCoverageLimit: number;
   fullCoverageApplied: number;
-  
-  // Balances
   ownerContributionRequired: number;
   faunaFinancingRequired: number;
-  
   tenantReceivableAmount: number;
 }
 
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
-  settings: SystemSettings
+  _settings: SystemSettings
 ): FinancialCalculationResult {
   const guaranteeAmount = c.guaranteeAmount || 0;
-  
+
   let totalCharges = 0;
   let damageCharges = 0;
   let serviceCharges = 0;
@@ -57,34 +49,21 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // Calculate Full Coverage if plan === 'FULL'
-  let fullCoverageLimit = 0;
-  if (c.plan === 'FULL') {
-    if (settings.fullCoverageLimitMode === 'MONTHLY_RENT') {
-      fullCoverageLimit = (c.monthlyRent || 0) * (settings.fullCoverageRentMultiplier || 1);
-    } else {
-      fullCoverageLimit = settings.fullCoverageFixedLimit || 500000;
-    }
-  }
-
+  // Regla Plan Full: la cobertura adicional máxima equivale al 100% de la garantía.
+  // Se aplica únicamente a daños/reparaciones y después de aplicar la garantía a daños.
+  const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
   let fullCoverageApplied = 0;
+
   if (c.plan === 'FULL' && isInsufficient) {
-    // Full coverage applies ONLY to damage/repair charges
-    // Guarantee is applied first proportionally or to service/damage
-    // Damage amount not covered by guarantee:
     const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
-    const uncoveredDamage = damageCharges - guaranteeForDamage;
-    
-    if (uncoveredDamage > 0) {
-      fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
-    }
+    const uncoveredDamage = Math.max(0, damageCharges - guaranteeForDamage);
+    fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
   }
 
-  // Owner contribution & Fauna financing calculations
   const ownerContributionRequired = c.ownerContribution || 0;
   const faunaFinancingRequired = c.faunaFinancing || 0;
-  
-  // Tenant owes the total deficit minus nothing (unless forgiven, debt is generated)
+
+  // La cobertura Full protege al propietario, pero no extingue la deuda del arrendatario.
   const tenantReceivableAmount = tenantDeficit;
 
   return {
@@ -108,9 +87,10 @@ export function calculateGuaranteeFinances(
 }
 
 /**
- * Distributes tenant payment strictly according to RULE 17:
- * Priority 1: Recover Owner Contribution FIRST
- * Priority 2: Recover Fauna Financing SECOND
+ * Distribuye pagos posteriores del arrendatario:
+ * 1) recuperar aporte del propietario;
+ * 2) recuperar financiamiento Fauna;
+ * 3) el remanente se aplica al resto de la deuda del arrendatario.
  */
 export function calculatePaymentDistribution(
   paymentAmount: number,
@@ -119,15 +99,12 @@ export function calculatePaymentDistribution(
 ) {
   let remainingPayment = Math.max(0, paymentAmount);
 
-  // 1. Recover Owner Contribution
   const ownerRecovery = Math.min(remainingPayment, ownerContributionToRecover);
   remainingPayment -= ownerRecovery;
 
-  // 2. Recover Fauna Financing
   const faunaRecovery = Math.min(remainingPayment, faunaFinancingToRecover);
   remainingPayment -= faunaRecovery;
 
-  // 3. Excess / Surplus
   const surplusPayment = remainingPayment;
 
   return {

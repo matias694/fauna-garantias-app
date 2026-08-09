@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Receivable } from '../types';
 import { formatCLP } from '../utils/formatters';
 import { calculatePaymentDistribution } from '../utils/calculations';
-import { X, DollarSign, ShieldCheck, CheckCircle2, ArrowRight } from 'lucide-react';
+import { X, DollarSign, ShieldCheck } from 'lucide-react';
 
 interface RecordPaymentModalProps {
   isOpen: boolean;
@@ -19,7 +19,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
 
   if (!isOpen || !receivable) return null;
 
-  // Live calculation of Rule 17 Priority Distribution
   const dist = calculatePaymentDistribution(
     paymentAmount || 0,
     receivable.ownerContributionToRecover,
@@ -35,9 +34,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
     }
 
     if (paymentAmount > receivable.pendingBalance) {
-      if (!confirm(`El monto ($${paymentAmount}) supera el saldo pendiente ($${receivable.pendingBalance}). ¿Desea registrar el pago de todas formas?`)) {
-        return;
-      }
+      alert(`El pago no puede superar el saldo pendiente de ${formatCLP(receivable.pendingBalance)}.`);
+      return;
     }
 
     recordTenantPayment(receivable.id, paymentAmount, notes);
@@ -48,7 +46,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-100">
-        
         <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold">
@@ -65,8 +62,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
-          
-          {/* Summary Box */}
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 grid grid-cols-3 gap-2 text-slate-700">
             <div>
               <span className="text-[10px] text-slate-500 font-bold block uppercase">Deuda Original</span>
@@ -86,6 +81,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
             <label className="block font-bold text-slate-800 mb-1">Monto Pagado por Arrendatario ($ CLP) *</label>
             <input
               type="number"
+              min="1"
+              max={receivable.pendingBalance}
               step="5000"
               required
               value={paymentAmount}
@@ -95,26 +92,25 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
             <span className="text-[11px] text-slate-500 block mt-0.5 font-bold">{formatCLP(paymentAmount)}</span>
           </div>
 
-          {/* AUTOMATIC PRIORITY DISTRIBUTION PREVIEW (SECTION 17) */}
           <div className="bg-emerald-50/70 border border-emerald-200 p-4 rounded-xl space-y-2 text-emerald-950">
             <h4 className="font-bold text-xs uppercase flex items-center gap-1 text-emerald-900">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Distribución Automática Obligatoria (Regla Fauna #17)
+              Distribución Automática
             </h4>
 
             <div className="space-y-1.5 pt-1 text-xs">
               <div className="flex justify-between items-center bg-white p-2 rounded border border-emerald-100">
-                <span>1. Recuperar Aporte Propietario (Prioridad 1):</span>
+                <span>1. Recuperar aporte propietario:</span>
                 <strong className="font-mono text-blue-900">{formatCLP(dist.ownerRecovery)}</strong>
               </div>
 
               <div className="flex justify-between items-center bg-white p-2 rounded border border-emerald-100">
-                <span>2. Recuperar Financiamiento Fauna (Prioridad 2):</span>
+                <span>2. Recuperar financiamiento Fauna:</span>
                 <strong className="font-mono text-emerald-900">{formatCLP(dist.faunaRecovery)}</strong>
               </div>
 
               <div className="flex justify-between items-center pt-1 font-bold text-slate-800">
-                <span>Nuevo Saldo Pendiente Arrendatario:</span>
+                <span>Nuevo saldo pendiente:</span>
                 <span className="font-mono text-rose-800">{formatCLP(Math.max(0, receivable.pendingBalance - paymentAmount))}</span>
               </div>
             </div>
@@ -124,7 +120,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
             <label className="block font-semibold text-slate-700 mb-1">Observaciones / Método de Pago</label>
             <textarea
               rows={2}
-              placeholder="Ej. Transferencia Banco de Chile, comprobante N° 88123..."
+              placeholder="Ej. Transferencia, comprobante, referencia..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
@@ -146,9 +142,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
               Confirmar y Registrar Pago
             </button>
           </div>
-
         </form>
-
       </div>
     </div>
   );
