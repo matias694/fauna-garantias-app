@@ -26,12 +26,10 @@ export function isCaseCompleted(c: GuaranteeCase): boolean {
   if (c.liquidationStatus !== 'EMITIDA') return false;
   if (c.preparationStatus !== 'LISTA') return false;
 
-  // If refund exists, it must be TRANSFERIDA
   if (c.refund && c.refund.amount > 0 && c.refund.status !== 'TRANSFERIDA') {
     return false;
   }
 
-  // If receivable exists, it must be PAGADA or INCOBRABLE
   if (c.receivableStatus && c.receivableStatus !== 'PAGADA' && c.receivableStatus !== 'INCOBRABLE') {
     return false;
   }
@@ -46,44 +44,43 @@ interface AppContextType {
   setActiveView: (view: 'dashboard' | 'guarantees' | 'receivables' | 'settings' | 'case-detail') => void;
   selectedCaseId: string | null;
   setSelectedCaseId: (id: string | null) => void;
-  
+
   cases: GuaranteeCase[];
   receivables: Receivable[];
   settings: SystemSettings;
   auditLogs: AuditLog[];
-  
-  // Actions
+
   createGuaranteeCase: (caseData: Omit<GuaranteeCase, 'id' | 'deadlineDate' | 'alertDate' | 'repairs' | 'charges' | 'attachments' | 'movements' | 'ownerContribution' | 'fullCoverageApplied' | 'faunaFinancing' | 'requirements' | 'followUps' | 'isClosed'>) => GuaranteeCase;
   updateGuaranteeCase: (caseId: string, updates: Partial<GuaranteeCase>) => void;
-  
+
   changePreparationStatus: (caseId: string, newStatus: PreparationStatus) => void;
   changeLiquidationStatus: (caseId: string, newStatus: LiquidationStatus, blockedBy?: BlockedByReason, blockedNotes?: string) => void;
-  
+
   updateRequirementStatus: (caseId: string, requirementId: string, status: RequirementStatus, notes?: string) => void;
   addRequirement: (caseId: string, name: string) => void;
-  
+
   addFollowUpComment: (caseId: string, data: { comment: string; area: FollowUpArea; nextManagement?: string; nextManagementDate?: string; nextManagementResponsible?: string }) => void;
-  
+
   addExitRepair: (caseId: string, repair: Omit<ExitRepair, 'id'>) => void;
   updateExitRepair: (caseId: string, repairId: string, updates: Partial<ExitRepair>) => void;
   deleteExitRepair: (caseId: string, repairId: string) => void;
-  
+
   addCharge: (caseId: string, charge: Omit<Charge, 'id'>) => void;
   updateCharge: (caseId: string, chargeId: string, updates: Partial<Charge>) => void;
   deleteCharge: (caseId: string, chargeId: string) => void;
-  
+
   addFinancialMovement: (caseId: string, movement: Omit<FinancialMovement, 'id' | 'caseId'>) => void;
   addAttachment: (caseId: string, attachment: Omit<CaseAttachment, 'id'>) => void;
-  
+
   emitLiquidation: (caseId: string) => void;
   registerTenantRefund: (caseId: string, refundData: { date: string; voucherName?: string; destinationAccount?: string; notes?: string }) => void;
-  
+
   createReceivableFromCase: (caseId: string) => Receivable | null;
   recordTenantPayment: (receivableId: string, paymentAmount: number, notes: string) => void;
-  
+
   closeGuaranteeCase: (caseId: string) => { success: boolean; message: string };
   reopenGuaranteeCase: (caseId: string) => void;
-  
+
   updateSettings: (newSettings: SystemSettings) => void;
   logAudit: (caseId: string, action: string, detail: string) => void;
 }
@@ -95,7 +92,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeView, setActiveView] = useState<'dashboard' | 'guarantees' | 'receivables' | 'settings' | 'case-detail'>('dashboard');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
 
-  // Load state from localStorage or initialData
   const [cases, setCases] = useState<GuaranteeCase[]>(() => {
     const saved = localStorage.getItem('fauna_guarantee_cases_v2');
     if (saved) {
@@ -139,7 +135,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
-  // Sync to localStorage
   useEffect(() => {
     localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(cases));
   }, [cases]);
@@ -197,7 +192,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       alertDate,
       preparationStatus: 'PENDIENTE',
       liquidationStatus: 'EN_PREPARACION',
-      requirements: defaultRequirements.map(r => ({ ...r })),
+      requirements: defaultRequirements.map(r => ({ ...r, status: 'PENDIENTE' as RequirementStatus })),
       blockedBy: 'SIN_BLOQUEO',
       followUps: [],
       repairs: [],
@@ -276,8 +271,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         const updatedReqs = c.requirements.map(req => req.id === requirementId ? { ...req, status, notes: notes !== undefined ? notes : req.notes } : req);
-        
-        // Check if all requirements are COMPLETO or NO_APLICA
         const allDone = updatedReqs.every(r => r.status === 'COMPLETO' || r.status === 'NO_APLICA');
         let newLiqStatus = c.liquidationStatus;
 
@@ -371,9 +364,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         const newRepairs = [...c.repairs, newRepair];
-        
-        // Check if all repairs are now TERMINADA
-        const allFinished = newRepairs.length > 0 && newRepairs.every(r => r.status === 'TERMINADA');
+        const allFinished = newRepairs.length > 0 && newRepairs.every(r => r.status === 'TERMINADA' || r.status === 'CANCELADA');
         const isNowReady = allFinished && c.preparationStatus !== 'LISTA';
         const readyDate = isNowReady ? formatDate(new Date().toISOString().split('T')[0]) : c.preparationReadyDate;
 
@@ -396,9 +387,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         const updatedRepairs = c.repairs.map(r => r.id === repairId ? { ...r, ...updates } : r);
-        
-        // Check if all repairs are now TERMINADA
-        const allFinished = updatedRepairs.length > 0 && updatedRepairs.every(r => r.status === 'TERMINADA');
+        const allFinished = updatedRepairs.length > 0 && updatedRepairs.every(r => r.status === 'TERMINADA' || r.status === 'CANCELADA');
         const isNowReady = allFinished && c.preparationStatus !== 'LISTA';
         const readyDate = isNowReady ? formatDate(new Date().toISOString().split('T')[0]) : c.preparationReadyDate;
 
@@ -548,6 +537,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const emitLiquidation = (caseId: string) => {
     const targetCase = cases.find(c => c.id === caseId);
     if (!targetCase) return;
+    if (targetCase.liquidationStatus !== 'LISTA') return;
 
     const fin = calculateGuaranteeFinances(targetCase, settings);
     let refund = targetCase.refund;
@@ -562,7 +552,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         notes: 'Monto a devolver al arrendatario'
       };
     } else if (fin.isInsufficient) {
-      // Create receivable automatically
       const rec = createReceivableFromCase(caseId);
       if (rec) {
         recId = rec.id;
@@ -693,11 +682,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const recordTenantPayment = (receivableId: string, paymentAmount: number, notes: string) => {
     const targetRec = receivables.find(r => r.id === receivableId);
-    if (!targetRec || paymentAmount <= 0) return;
+    if (!targetRec || paymentAmount <= 0 || paymentAmount > targetRec.pendingBalance) return;
 
-    // RULE 17 Payment Distribution:
-    // Priority 1: Recover Owner Contribution
-    // Priority 2: Recover Fauna Financing
     const dist = calculatePaymentDistribution(
       paymentAmount,
       targetRec.ownerContributionToRecover,
@@ -706,19 +692,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const todayStr = formatDate(new Date().toISOString().split('T')[0]);
     const nowTimeStr = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    const newPending = Math.max(0, targetRec.pendingBalance - paymentAmount);
+    const newRecStatus: Receivable['status'] = newPending <= 0 ? 'PAGADA' : 'PAGO_PARCIAL';
 
-    let newRecStatus: Receivable['status'] = 'PAGO_PARCIAL';
-
-    // Update Receivable
     setReceivables(prev => prev.map(r => {
       if (r.id === receivableId) {
-        const newPaid = r.totalPaid + paymentAmount;
-        const newPending = Math.max(0, r.pendingBalance - paymentAmount);
-        newRecStatus = newPending <= 0 ? 'PAGADA' : 'PAGO_PARCIAL';
-
         return {
           ...r,
-          totalPaid: newPaid,
+          totalPaid: r.totalPaid + paymentAmount,
           pendingBalance: newPending,
           ownerContributionToRecover: dist.remainingOwnerContribution,
           faunaFinancingToRecover: dist.remainingFaunaFinancing,
@@ -729,11 +710,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return r;
     }));
 
-    // Add financial movements to target case
     const caseId = targetRec.caseId;
     const movementsToAdd: FinancialMovement[] = [];
 
-    // 1. Payment from Tenant
     movementsToAdd.push({
       id: 'MOV-' + Date.now() + '-1',
       caseId,
@@ -747,7 +726,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       observation: notes || 'Abono a cuenta por cobrar'
     });
 
-    // 2. Recovery for Owner
     if (dist.ownerRecovery > 0) {
       movementsToAdd.push({
         id: 'MOV-' + Date.now() + '-2',
@@ -759,11 +737,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         amount: dist.ownerRecovery,
         user: userRole,
         reference: `RECUP-PROP-${receivableId}`,
-        observation: `Distribución automática según Prioridad 1`
+        observation: 'Distribución automática: prioridad propietario'
       });
     }
 
-    // 3. Recovery for Fauna
     if (dist.faunaRecovery > 0) {
       movementsToAdd.push({
         id: 'MOV-' + Date.now() + '-3',
@@ -771,20 +748,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         date: todayStr,
         time: nowTimeStr,
         type: 'RECUPERACION_FAUNA',
-        description: `Recuperación de financiamiento operativo Fauna`,
+        description: 'Recuperación de financiamiento operativo Fauna',
         amount: dist.faunaRecovery,
         user: userRole,
         reference: `RECUP-FAUNA-${receivableId}`,
-        observation: `Distribución automática según Prioridad 2`
+        observation: 'Distribución automática: prioridad Fauna después del propietario'
       });
     }
 
-    // Update case movements and internal balances
+    if (dist.surplusPayment > 0) {
+      movementsToAdd.push({
+        id: 'MOV-' + Date.now() + '-4',
+        caseId,
+        date: todayStr,
+        time: nowTimeStr,
+        type: 'SALDO_PAGO_ARRENDATARIO',
+        description: 'Saldo de pago aplicado a deuda del arrendatario',
+        amount: dist.surplusPayment,
+        user: userRole,
+        reference: `SALDO-${receivableId}`,
+        observation: 'Parte del pago que no corresponde a recuperar aporte propietario ni financiamiento Fauna'
+      });
+    }
+
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
         const newOwnerContrib = Math.max(0, c.ownerContribution - dist.ownerRecovery);
         const newFaunaFinancing = Math.max(0, c.faunaFinancing - dist.faunaRecovery);
-        
+
         const updated = {
           ...c,
           ownerContribution: newOwnerContrib,
@@ -809,24 +800,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targetCase = cases.find(c => c.id === caseId);
     if (!targetCase) return { success: false, message: 'Caso no encontrado.' };
 
-    const pendingRepairs = targetCase.repairs.filter(r => r.status !== 'TERMINADA' && r.status !== 'CANCELADA');
-    if (pendingRepairs.length > 0) {
+    if (!isCaseCompleted(targetCase)) {
+      const pending: string[] = [];
+      if (targetCase.preparationStatus !== 'LISTA') pending.push('preparación física');
+      if (targetCase.liquidationStatus !== 'EMITIDA') pending.push('liquidación emitida');
+      if (targetCase.refund && targetCase.refund.amount > 0 && targetCase.refund.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
+      if (targetCase.receivableStatus && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
+
       return {
         success: false,
-        message: `No se puede cerrar el caso: Existen ${pendingRepairs.length} reparación(es) en curso o pendientes. Por favor finalícelas o cancélelas antes de cerrar.`
+        message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.`
       };
     }
 
     setCases(prev => prev.map(c => {
       if (c.id === caseId) {
-        const updated = {
+        return {
           ...c,
           isClosed: true,
           closedAt: new Date().toLocaleString('es-CL'),
-          closedBy: userRole
+          closedBy: userRole,
+          isCompleted: true
         };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
       }
       return c;
     }));
