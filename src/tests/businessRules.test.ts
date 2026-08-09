@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { calculateGuaranteeFinances, calculatePaymentDistribution } from '../utils/calculations';
+import {
+  calculateGuaranteeFinances,
+  calculateOwnerLiquidationReconciliation,
+  calculatePaymentDistribution
+} from '../utils/calculations';
 import { isCaseCompleted } from '../context/AppContext';
 import type { GuaranteeCase, SystemSettings } from '../types';
 
@@ -73,8 +77,11 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     }]
   });
   const fin = calculateGuaranteeFinances(c, settings);
+  const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
   assert.equal(fin.isSurplus, true);
   assert.equal(fin.refundToTenant, 200000);
+  assert.equal(ownerSettlement.refundToTenant, 200000);
+  assert.equal(ownerSettlement.reconciliationBalance, 0);
   assert.equal(isCaseCompleted({ ...c, refund: { amount: 200000, status: 'PENDIENTE' } }), false);
   assert.equal(isCaseCompleted({ ...c, refund: { amount: 200000, status: 'TRANSFERIDA' } }), true);
 }
@@ -88,9 +95,11 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     }]
   });
   const fin = calculateGuaranteeFinances(c, settings);
+  const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
   assert.equal(fin.isExact, true);
   assert.equal(fin.refundToTenant, 0);
   assert.equal(fin.tenantDeficit, 0);
+  assert.equal(ownerSettlement.reconciliationBalance, 0);
   assert.equal(isCaseCompleted(c), true);
 }
 
@@ -105,10 +114,13 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     receivableStatus: 'PENDIENTE'
   });
   const fin = calculateGuaranteeFinances(c, settings);
+  const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
   assert.equal(fin.isInsufficient, true);
   assert.equal(fin.tenantDeficit, 300000);
   assert.equal(fin.ownerContributionRequired, 300000);
   assert.equal(fin.faunaFinancingRequired, 0);
+  assert.equal(ownerSettlement.ownerContributionPending, 300000);
+  assert.equal(ownerSettlement.reconciliationBalance, -300000);
   assert.equal(isCaseCompleted(c), false);
   assert.equal(isCaseCompleted({ ...c, receivableStatus: 'PAGADA' }), true);
   assert.equal(isCaseCompleted({ ...c, receivableStatus: 'INCOBRABLE' }), true);
@@ -142,6 +154,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     ]
   });
   const fin = calculateGuaranteeFinances(c, settings);
+  const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
   assert.equal(fin.damageCharges, 800000);
   assert.equal(fin.serviceCharges, 100000);
   assert.equal(fin.fullCoverageLimit, 400000);
@@ -149,8 +162,49 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(fin.tenantDeficit, 500000);
   assert.equal(fin.ownerContributionRequired, 100000);
   assert.equal(fin.faunaFinancingRequired, 400000);
+  assert.equal(ownerSettlement.ownerContributionPending, 100000);
+  assert.equal(ownerSettlement.reconciliationBalance, -100000);
   assert.equal(c.ownerContribution, 0);
   assert.equal(c.faunaFinancing, 0);
 }
 
-console.log('✓ Reglas de negocio principales validadas: 4 escenarios OK');
+// 5) Liquidación propietario Full conserva el aporte histórico aunque después sea recuperado.
+{
+  const c = baseCase({
+    plan: 'FULL',
+    guaranteeAmount: 400000,
+    ownerContribution: 0,
+    faunaFinancing: 350000,
+    charges: [
+      {
+        id: 'CHG-6', category: 'REPARACIONES', description: 'Daños ficticios', amount: 800000,
+        date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+      },
+      {
+        id: 'CHG-7', category: 'GASTOS_COMUNES', description: 'Gastos comunes ficticios', amount: 100000,
+        date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+      }
+    ],
+    movements: [
+      {
+        id: 'MOV-1', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:00',
+        type: 'APORTE_PROPIETARIO', description: 'Aporte propietario', amount: 100000,
+        user: 'Usuario de prueba', reference: 'APORTE', observation: ''
+      },
+      {
+        id: 'MOV-2', caseId: 'GAR-TEST', date: '02/07/2026', time: '10:00',
+        type: 'RECUPERACION_PROPIETARIO', description: 'Recuperación propietario', amount: 100000,
+        user: 'Usuario de prueba', reference: 'RECUP', observation: ''
+      }
+    ]
+  });
+
+  const ownerSettlement = calculateOwnerLiquidationReconciliation(c, settings);
+  assert.equal(ownerSettlement.ownerContributionRequired, 100000);
+  assert.equal(ownerSettlement.ownerContributionFundedTotal, 100000);
+  assert.equal(ownerSettlement.ownerContributionApplied, 100000);
+  assert.equal(ownerSettlement.ownerContributionPending, 0);
+  assert.equal(ownerSettlement.reconciliationBalance, 0);
+}
+
+console.log('✓ Reglas de negocio principales validadas: 5 escenarios OK');
