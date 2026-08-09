@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, ChargeCategory, ChargeType, Charge } from '../../types';
 import { formatCLP, formatDate } from '../../utils/formatters';
-import { DollarSign, Plus, Trash2, Edit2, Paperclip, FileText } from 'lucide-react';
+import { DollarSign, Plus, Trash2, Edit2, Paperclip, Lock } from 'lucide-react';
 
 interface ChargesTabProps {
   guaranteeCase: GuaranteeCase;
@@ -24,8 +24,10 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   const [selectedRepairId, setSelectedRepairId] = useState<string>('');
 
   const todayStr = new Date().toISOString().split('T')[0];
+  const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
 
   const handleOpenAdd = () => {
+    if (isConfirmed) return;
     setEditingCharge(null);
     setCategory('REPARACIONES');
     setDescription('');
@@ -38,6 +40,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   };
 
   const handleOpenEdit = (ch: Charge) => {
+    if (isConfirmed) return;
     setEditingCharge(ch);
     setCategory(ch.category);
     setDescription(ch.description);
@@ -64,6 +67,12 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isConfirmed) {
+      alert('La liquidación ya está confirmada. Los cargos que forman parte del resultado definitivo no pueden modificarse desde esta vista.');
+      setIsModalOpen(false);
+      return;
+    }
 
     if (!description.trim() || amount <= 0) {
       alert('Por favor ingrese una descripción y un monto válido para el cargo.');
@@ -97,6 +106,11 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     setIsModalOpen(false);
   };
 
+  const handleDeleteCharge = (chargeId: string) => {
+    if (isConfirmed) return;
+    deleteCharge(guaranteeCase.id, chargeId);
+  };
+
   const totalChargesAmount = guaranteeCase.charges.reduce((sum, c) => sum + c.amount, 0);
 
   return (
@@ -116,12 +130,27 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
 
         <button
           onClick={handleOpenAdd}
-          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+          disabled={isConfirmed}
+          className={`px-4 py-2 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all whitespace-nowrap ${
+            isConfirmed
+              ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+              : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>+ Agregar Cargo</span>
+          {isConfirmed ? <Lock className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          <span>{isConfirmed ? 'Cargos bloqueados' : '+ Agregar Cargo'}</span>
         </button>
       </div>
+
+      {isConfirmed && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-3.5 text-xs text-purple-900 flex items-start gap-2.5">
+          <Lock className="w-4 h-4 mt-0.5 shrink-0 text-purple-700" />
+          <div>
+            <strong className="block">Liquidación confirmada</strong>
+            <span>Estos cargos forman parte del resultado definitivo y quedaron bloqueados para edición. La cobranza, devolución y reparaciones pueden continuar sin alterar la liquidación original.</span>
+          </div>
+        </div>
+      )}
 
       {/* Charges Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -183,21 +212,29 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                     </td>
 
                     <td className="p-3 text-right space-x-1 whitespace-nowrap">
-                      <button
-                        onClick={() => handleOpenEdit(ch)}
-                        className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
-                        title="Editar cargo"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
+                      {isConfirmed ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                          <Lock className="w-3 h-3" /> Bloqueado
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleOpenEdit(ch)}
+                            className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
+                            title="Editar cargo"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
 
-                      <button
-                        onClick={() => deleteCharge(guaranteeCase.id, ch.id)}
-                        className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg cursor-pointer"
-                        title="Eliminar cargo"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                          <button
+                            onClick={() => handleDeleteCharge(ch.id)}
+                            className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg cursor-pointer"
+                            title="Eliminar cargo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </td>
 
                   </tr>
@@ -209,7 +246,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
       </div>
 
       {/* Add / Edit Charge Modal */}
-      {isModalOpen && (
+      {isModalOpen && !isConfirmed && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4 border border-slate-100">
             <h3 className="font-bold text-base text-slate-800 border-b border-slate-100 pb-2">
