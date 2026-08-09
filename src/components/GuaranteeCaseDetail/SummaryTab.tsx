@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase } from '../../types';
 import { formatCLP, formatDate, calculateDaysDifference } from '../../utils/formatters';
@@ -15,6 +15,12 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || '');
   const [nextDate, setNextDate] = useState(guaranteeCase.nextManagementDate || '');
   const [nextResp, setNextResp] = useState(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
+
+  useEffect(() => {
+    setNextManagement(guaranteeCase.nextManagement || '');
+    setNextDate(guaranteeCase.nextManagementDate || '');
+    setNextResp(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
+  }, [guaranteeCase.id, guaranteeCase.nextManagement, guaranteeCase.nextManagementDate, guaranteeCase.nextManagementResponsible, guaranteeCase.responsible]);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
