@@ -35,15 +35,37 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const ownerRequired = fin.ownerContributionRequired;
   const faunaRequired = fin.faunaFinancingRequired;
 
-  // Antes de emitir, los campos del caso son los desembolsos efectivos acumulados.
-  // Después de emitir, el receivable contiene lo que aún falta recuperar.
-  const ownerFunded = guaranteeCase.ownerContribution || 0;
-  const faunaFunded = guaranteeCase.faunaFinancing || 0;
-  const ownerToRecover = receivable ? receivable.ownerContributionToRecover : ownerFunded;
-  const faunaToRecover = receivable ? receivable.faunaFinancingToRecover : faunaFunded;
+  // Los saldos del caso/receivable disminuyen cuando se recupera dinero.
+  // Para saber cuánto fue efectivamente aportado/desembolsado históricamente,
+  // usamos los movimientos financieros originales y no el saldo vigente.
+  const ownerFundingMovements = guaranteeCase.movements
+    .filter(m => m.type === 'APORTE_PROPIETARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  const faunaFundingMovements = guaranteeCase.movements
+    .filter(m => m.type === 'FINANCIAMIENTO_FAUNA')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  const ownerRecoveries = guaranteeCase.movements
+    .filter(m => m.type === 'RECUPERACION_PROPIETARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  const faunaRecoveries = guaranteeCase.movements
+    .filter(m => m.type === 'RECUPERACION_FAUNA')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
-  const ownerRemainingToFund = Math.max(0, ownerRequired - ownerFunded);
-  const faunaRemainingToFund = Math.max(0, faunaRequired - faunaFunded);
+  // Compatibilidad con casos anteriores que pudieran no tener movimiento de origen.
+  const ownerFundedTotal = ownerFundingMovements > 0
+    ? ownerFundingMovements
+    : (guaranteeCase.ownerContribution || 0) + ownerRecoveries;
+  const faunaFundedTotal = faunaFundingMovements > 0
+    ? faunaFundingMovements
+    : (guaranteeCase.faunaFinancing || 0) + faunaRecoveries;
+
+  const ownerCurrentBalance = guaranteeCase.ownerContribution || 0;
+  const faunaCurrentBalance = guaranteeCase.faunaFinancing || 0;
+  const ownerToRecover = receivable ? receivable.ownerContributionToRecover : ownerCurrentBalance;
+  const faunaToRecover = receivable ? receivable.faunaFinancingToRecover : faunaCurrentBalance;
+
+  const ownerRemainingToFund = Math.max(0, ownerRequired - ownerFundedTotal);
+  const faunaRemainingToFund = Math.max(0, faunaRequired - faunaFundedTotal);
 
   const registerFundingMovement = (type: 'OWNER' | 'FAUNA') => {
     if (isIssued) return;
@@ -56,7 +78,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
     if (type === 'OWNER') {
       updateGuaranteeCase(guaranteeCase.id, {
-        ownerContribution: ownerFunded + amount
+        ownerContribution: ownerCurrentBalance + amount
       });
       addFinancialMovement(guaranteeCase.id, {
         date: today,
@@ -72,7 +94,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
     }
 
     updateGuaranteeCase(guaranteeCase.id, {
-      faunaFinancing: faunaFunded + amount
+      faunaFinancing: faunaCurrentBalance + amount
     });
     addFinancialMovement(guaranteeCase.id, {
       date: today,
@@ -88,6 +110,8 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
   const ownerFundingComplete = ownerRemainingToFund === 0;
   const faunaFundingComplete = faunaRemainingToFund === 0;
+  const fundingWasCompleteAtSomePoint =
+    ownerFundedTotal >= ownerRequired && faunaFundedTotal >= faunaRequired;
 
   return (
     <div className="px-4 sm:px-6 pt-5 max-w-7xl mx-auto">
@@ -120,7 +144,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <span className="text-[10px] text-emerald-200 block">
               {isIssued
                 ? `Por recuperar: ${formatCLP(ownerToRecover)}`
-                : `Aportado efectivamente: ${formatCLP(ownerFunded)}`}
+                : `Aportado efectivamente: ${formatCLP(ownerFundedTotal)}`}
             </span>
             {!isIssued && ownerRequired > 0 && (
               <button
@@ -145,7 +169,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <span className="text-[10px] text-emerald-200 block">
               {isIssued
                 ? `Por recuperar: ${formatCLP(faunaToRecover)}`
-                : `Desembolsado efectivamente: ${formatCLP(faunaFunded)}`}
+                : `Desembolsado efectivamente: ${formatCLP(faunaFundedTotal)}`}
             </span>
             {!isIssued && faunaRequired > 0 && (
               <button
@@ -177,7 +201,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
           </div>
         )}
 
-        {isIssued && (ownerFunded < ownerRequired || faunaFunded < faunaRequired) && (
+        {isIssued && !fundingWasCompleteAtSomePoint && (
           <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2 text-[11px] text-amber-100">
             Esta liquidación fue emitida sin registrar todos los desembolsos requeridos. Por eso el reporte de recuperación solo incluye los montos que sí fueron registrados efectivamente.
           </div>
