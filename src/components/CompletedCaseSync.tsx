@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { formatDate } from '../utils/formatters';
 
 /**
  * Reconciles operational case state after the related tenant receivable is fully paid.
@@ -21,8 +22,8 @@ export const CompletedCaseSync: React.FC = () => {
 
       const needsCleanup =
         c.blockedBy === 'ARRENDATARIO' ||
-        Boolean(c.nextManagement?.trim()) ||
-        Boolean(c.nextManagementDate?.trim());
+        c.nextManagement !== 'Cerrar caso' ||
+        Boolean(c.nextManagementDate?.trim() === false);
 
       if (!needsCleanup) {
         synced.current.add(c.id);
@@ -30,12 +31,14 @@ export const CompletedCaseSync: React.FC = () => {
       }
 
       synced.current.add(c.id);
+      const today = formatDate(new Date().toISOString().split('T')[0]);
+
       updateGuaranteeCase(c.id, {
         blockedBy: 'SIN_BLOQUEO',
         blockedReasonNotes: '',
-        nextManagement: '',
-        nextManagementDate: '',
-        nextManagementResponsible: ''
+        nextManagement: 'Cerrar caso',
+        nextManagementDate: today,
+        nextManagementResponsible: c.responsible || ''
       });
     });
   }, [cases, receivables, updateGuaranteeCase]);
