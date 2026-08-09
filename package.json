@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:rules": "tsx src/tests/businessRules.test.ts"
+    "test:rules": "tsx src/tests/businessRules.test.ts && node scripts/test-completed-case-sync.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

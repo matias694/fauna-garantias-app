@@ -9,6 +9,7 @@ import { ReceivablesList } from './components/ReceivablesList';
 import { SettingsView } from './components/SettingsView';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
+import { CompletedCaseSync } from './components/CompletedCaseSync';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -42,6 +43,7 @@ export default function App() {
   return (
     <AppProvider>
       <LegacyReceivableReconciler />
+      <CompletedCaseSync />
       <MainContent />
     </AppProvider>
   );
