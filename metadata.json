@@ -1,0 +1,6 @@
+{
+  "name": "Fauna Garantías",
+  "description": "Aplicación interna para gestión de recepción de propiedades, reparaciones de salida y liquidación de garantías de Fauna Propiedades.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
