@@ -79,12 +79,11 @@ export const FullCoverageDemoSeeder: React.FC = () => {
           photos: []
         }
       ],
-      // Escenario esperado: déficit total $500.000.
-      // Full cubre $400.000 de daños; los $100.000 restantes requieren aporte del propietario.
-      // Si el arrendatario paga después, primero se recupera el aporte propietario y luego Fauna.
-      ownerContribution: 100000,
+      // La liquidación requiere $100.000 del propietario y permite hasta $400.000 de cobertura Full,
+      // pero el caso parte SIN aportes ni desembolsos efectivos registrados.
+      ownerContribution: 0,
       fullCoverageApplied: 400000,
-      faunaFinancing: 400000,
+      faunaFinancing: 0,
       nextManagement: 'Emitir liquidación definitiva',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
