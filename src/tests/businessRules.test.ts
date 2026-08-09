@@ -119,25 +119,28 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(dist.remainingFaunaFinancing, 0);
 }
 
-// 4) Garantía insuficiente Full: cobertura solo sobre daños y con tope configurado
+// 4) Plan Full: cobertura adicional = 100% del monto de garantía, no del arriendo
 {
   const c = baseCase({
     plan: 'FULL',
+    guaranteeAmount: 400000,
+    monthlyRent: 450000,
     charges: [
       {
         id: 'CHG-4', category: 'REPARACIONES', description: 'Daños ficticios', amount: 800000,
         date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
       },
       {
-        id: 'CHG-5', category: 'GASTOS_COMUNES', description: 'Gastos comunes ficticios', amount: 200000,
+        id: 'CHG-5', category: 'GASTOS_COMUNES', description: 'Gastos comunes ficticios', amount: 100000,
         date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
       }
     ]
   });
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.damageCharges, 800000);
-  assert.equal(fin.serviceCharges, 200000);
-  assert.equal(fin.fullCoverageApplied, 300000);
+  assert.equal(fin.serviceCharges, 100000);
+  assert.equal(fin.fullCoverageLimit, 400000);
+  assert.equal(fin.fullCoverageApplied, 400000);
   assert.equal(fin.tenantDeficit, 500000);
 }
 
