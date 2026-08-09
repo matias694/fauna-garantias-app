@@ -4,20 +4,13 @@ import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
 import { formatCLP, formatDate } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
 import {
-  Calculator,
   CheckCircle2,
-  Clock,
   AlertTriangle,
   FileText,
-  Receipt,
   Plus,
   Send,
-  ArrowRight,
-  ShieldCheck,
-  RotateCcw,
   Banknote,
-  Upload,
-  UserCheck
+  Lock
 } from 'lucide-react';
 
 interface LiquidationTabProps {
@@ -37,11 +30,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
     addRequirement,
     emitLiquidation,
     registerTenantRefund,
-    createReceivableFromCase,
-    closeGuaranteeCase,
-    reopenGuaranteeCase,
-    settings,
-    userRole
+    settings
   } = useApp();
 
   const [newReqName, setNewReqName] = useState('');
@@ -56,10 +45,11 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
   const [refundNotes, setRefundNotes] = useState('');
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
 
   const handleAddRequirement = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newReqName.trim()) return;
+    if (isConfirmed || !newReqName.trim()) return;
     addRequirement(guaranteeCase.id, newReqName.trim());
     setNewReqName('');
     setShowAddReq(false);
@@ -75,9 +65,17 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
     alert('Motivo de bloqueo actualizado.');
   };
 
-  const handleEmitLiquidation = () => {
+  const handleConfirmLiquidation = () => {
+    if (guaranteeCase.liquidationStatus !== 'LISTA') return;
+
+    const confirmed = window.confirm(
+      '¿Confirmar esta liquidación como definitiva?\n\nAl confirmar, los cargos y el resultado original quedarán fijados. Si existe un saldo por cobrar, se creará la cuenta por cobrar y la cobranza continuará por separado. Si existe una devolución, quedará pendiente de transferir.'
+    );
+
+    if (!confirmed) return;
+
     emitLiquidation(guaranteeCase.id);
-    alert('Liquidación emitida exitosamente.');
+    alert('Liquidación confirmada. El resultado definitivo quedó fijado y las acciones posteriores se gestionarán por separado.');
   };
 
   const handleRegisterRefundSubmit = (e: React.FormEvent) => {
@@ -92,8 +90,6 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
     alert('Transferencia de devolución registrada exitosamente y agregada a movimientos financieros.');
   };
 
-  const allReqsComplete = guaranteeCase.requirements.length > 0 && guaranteeCase.requirements.every(r => r.status === 'COMPLETO' || r.status === 'NO_APLICA');
-
   return (
     <div className="space-y-6">
       
@@ -104,13 +100,13 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
             <span className="text-[10px] font-bold uppercase text-slate-400 block">ESTADO LIQUIDACIÓN DE GARANTÍA</span>
             <div className="flex items-center gap-2 mt-1">
               <span className={`px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide border ${
-                guaranteeCase.liquidationStatus === 'EMITIDA'
+                isConfirmed
                   ? 'bg-purple-100 text-purple-900 border-purple-300'
                   : guaranteeCase.liquidationStatus === 'LISTA'
                   ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                   : 'bg-amber-100 text-amber-900 border-amber-300'
               }`}>
-                [ {guaranteeCase.liquidationStatus === 'EN_PREPARACION' ? 'EN PREPARACIÓN' : guaranteeCase.liquidationStatus} ]
+                [ {guaranteeCase.liquidationStatus === 'EN_PREPARACION' ? 'EN PREPARACIÓN' : isConfirmed ? 'CONFIRMADA' : guaranteeCase.liquidationStatus} ]
               </span>
 
               {guaranteeCase.isCompleted && (
@@ -169,7 +165,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
         )}
       </div>
 
-      {/* SECTION 7: CHECKLIST DE REQUISITOS PARA LIQUIDAR */}
+      {/* CHECKLIST DE REQUISITOS PARA LIQUIDAR */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
@@ -182,17 +178,29 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
             </p>
           </div>
 
-          <button
-            onClick={() => setShowAddReq(true)}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg inline-flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Agregar Requisito</span>
-          </button>
+          {!isConfirmed && (
+            <button
+              onClick={() => setShowAddReq(true)}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Agregar Requisito</span>
+            </button>
+          )}
         </div>
 
+        {isConfirmed && (
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900 flex items-start gap-2.5">
+            <Lock className="w-4 h-4 mt-0.5 shrink-0 text-purple-700" />
+            <div>
+              <strong className="block">Liquidación confirmada</strong>
+              <span>El checklist y los cargos quedaron fijados como parte de la liquidación original. La devolución o la cobranza pueden continuar sin modificar este resultado.</span>
+            </div>
+          </div>
+        )}
+
         {/* ADD REQ FORM */}
-        {showAddReq && (
+        {showAddReq && !isConfirmed && (
           <form onSubmit={handleAddRequirement} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex gap-2 text-xs">
             <input
               type="text"
@@ -240,11 +248,14 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
                 {(['PENDIENTE', 'COMPLETO', 'NO_APLICA'] as RequirementStatus[]).map((st) => (
                   <button
                     key={st}
-                    onClick={() => updateRequirementStatus(guaranteeCase.id, req.id, st)}
-                    className={`flex-1 py-1 rounded text-[10px] font-bold border cursor-pointer transition-all ${
-                      req.status === st
-                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                    onClick={() => !isConfirmed && updateRequirementStatus(guaranteeCase.id, req.id, st)}
+                    disabled={isConfirmed}
+                    className={`flex-1 py-1 rounded text-[10px] font-bold border transition-all ${
+                      isConfirmed
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                        : req.status === st
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs cursor-pointer'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 cursor-pointer'
                     }`}
                   >
                     {st === 'NO_APLICA' ? 'N/A' : st}
@@ -255,7 +266,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
           ))}
         </div>
 
-        {/* EMISSION ACTIONS */}
+        {/* CONFIRMATION ACTIONS */}
         <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div>
             {guaranteeCase.liquidationStatus === 'EN_PREPARACION' && (
@@ -265,15 +276,20 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
               </span>
             )}
             {guaranteeCase.liquidationStatus === 'LISTA' && (
-              <span className="text-xs text-emerald-800 font-bold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                Todos los antecedentes listos. La liquidación se puede revisar y emitir.
-              </span>
+              <div className="space-y-1">
+                <span className="text-xs text-emerald-800 font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  Todos los antecedentes listos. La liquidación se puede revisar y confirmar.
+                </span>
+                <p className="text-[11px] text-slate-500 max-w-2xl">
+                  Confirmar fija los cargos y el resultado original. Si queda un monto por cobrar, la deuda se crea en Por cobrar y el caso continúa abierto hasta que esa cobranza se resuelva.
+                </p>
+              </div>
             )}
-            {guaranteeCase.liquidationStatus === 'EMITIDA' && (
+            {isConfirmed && (
               <span className="text-xs text-purple-900 font-bold flex items-center gap-1.5">
-                <Send className="w-4 h-4 text-purple-600" />
-                Liquidación emitida al arrendatario.
+                <Lock className="w-4 h-4 text-purple-600" />
+                Liquidación confirmada. El resultado original quedó fijado; devolución y cobranza se gestionan por separado.
               </span>
             )}
           </div>
@@ -295,18 +311,18 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
               <span>Ver Documento Propietario</span>
             </button>
 
-            {guaranteeCase.liquidationStatus !== 'EMITIDA' && (
+            {!isConfirmed && (
               <button
-                onClick={handleEmitLiquidation}
+                onClick={handleConfirmLiquidation}
                 disabled={guaranteeCase.liquidationStatus !== 'LISTA'}
-                className={`px-5 py-2 rounded-xl font-bold text-xs shadow-xs inline-flex items-center gap-2 transition-all cursor-pointer ${
+                className={`px-5 py-2 rounded-xl font-bold text-xs shadow-xs inline-flex items-center gap-2 transition-all ${
                   guaranteeCase.liquidationStatus === 'LISTA'
-                    ? 'bg-purple-700 hover:bg-purple-800 text-white'
+                    ? 'bg-purple-700 hover:bg-purple-800 text-white cursor-pointer'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 }`}
               >
-                <Send className="w-4 h-4" />
-                <span>EMITIR LIQUIDACIÓN DEFINITIVA</span>
+                <Lock className="w-4 h-4" />
+                <span>CONFIRMAR LIQUIDACIÓN DEFINITIVA</span>
               </button>
             )}
           </div>
@@ -346,7 +362,6 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
               </div>
             </div>
 
-            {/* DETAILS & TRANSFER ACTION */}
             {guaranteeCase.refund?.status === 'TRANSFERIDA' ? (
               <div className="bg-white p-3 rounded-xl border border-emerald-200 text-xs space-y-1 text-slate-800">
                 <div><strong>Fecha Transferencia:</strong> {guaranteeCase.refund.date}</div>
@@ -358,7 +373,12 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
               <div className="pt-2 border-t border-emerald-200 flex justify-end">
                 <button
                   onClick={() => setIsRefundModalOpen(true)}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-2 cursor-pointer"
+                  disabled={!isConfirmed}
+                  className={`px-4 py-2 font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-2 ${
+                    isConfirmed
+                      ? 'bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
                 >
                   <Banknote className="w-4 h-4" />
                   <span>Registrar Transferencia de Devolución</span>
@@ -386,20 +406,22 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({
               <div className="text-right">
                 <span className="text-xs text-amber-800 block font-semibold">Cuenta por Cobrar:</span>
                 <span className="px-3 py-1 rounded-lg font-black text-xs uppercase bg-amber-200 text-amber-900 border border-amber-400 inline-block mt-0.5">
-                  [ {guaranteeCase.receivableStatus || 'PENDIENTE'} ]
+                  [ {guaranteeCase.receivableStatus || (isConfirmed ? 'PENDIENTE' : 'SE CREA AL CONFIRMAR')} ]
                 </span>
               </div>
             </div>
 
             <p className="text-xs text-amber-900">
-              La gestión de cobranza y la recepción de pagos posteriores se realizan desde el módulo <strong>"Por Cobrar"</strong>.
+              {isConfirmed
+                ? <>La gestión de cobranza y la recepción de pagos posteriores se realizan desde el módulo <strong>"Por Cobrar"</strong>.</>
+                : <>Este resultado todavía es preliminar. Al <strong>confirmar la liquidación definitiva</strong> se creará la cuenta por cobrar por este monto.</>}
             </p>
           </div>
         )}
       </div>
 
       {/* REFUND TRANSFER MODAL */}
-      {isRefundModalOpen && (
+      {isRefundModalOpen && isConfirmed && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-xl space-y-4">
             <h3 className="font-bold text-base text-slate-900 border-b border-slate-100 pb-2">
