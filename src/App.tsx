@@ -11,6 +11,8 @@ import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
 import { ExactBalanceDemoSeeder } from './components/ExactBalanceDemoSeeder';
+import { FullCoverageDemoSeeder } from './components/FullCoverageDemoSeeder';
+import { FullCoverageCaseBanner } from './components/FullCoverageCaseBanner';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -26,7 +28,12 @@ const MainContent: React.FC = () => {
         <main className="flex-1 pb-12">
           {activeView === 'dashboard' && <Dashboard />}
           {activeView === 'guarantees' && <GuaranteesList onOpenNewModal={() => setIsNewModalOpen(true)} />}
-          {activeView === 'case-detail' && <GuaranteeCaseDetail caseId={selectedCaseId || ''} />}
+          {activeView === 'case-detail' && (
+            <>
+              <FullCoverageCaseBanner />
+              <GuaranteeCaseDetail caseId={selectedCaseId || ''} />
+            </>
+          )}
           {activeView === 'receivables' && <ReceivablesList />}
           {activeView === 'settings' && <SettingsView />}
         </main>
@@ -46,6 +53,7 @@ export default function App() {
       <LegacyReceivableReconciler />
       <CompletedCaseSync />
       <ExactBalanceDemoSeeder />
+      <FullCoverageDemoSeeder />
       <MainContent />
     </AppProvider>
   );
