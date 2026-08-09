@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase } from '../../types';
-import { History, Clock, User, ShieldCheck } from 'lucide-react';
+import { History } from 'lucide-react';
 
 interface HistoryTabProps {
   guaranteeCase: GuaranteeCase;
@@ -11,6 +11,15 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
   const { auditLogs } = useApp();
 
   const caseLogs = auditLogs.filter(l => l.caseId === guaranteeCase.id);
+
+  const getDisplayAction = (action: string) => {
+    if (action === 'Emisión de Liquidación') return 'Confirmación de Liquidación';
+    return action;
+  };
+
+  const getDisplayDetail = (detail: string) => detail
+    .replace('Liquidación de garantía emitida formalmente', 'Liquidación de garantía confirmada como definitiva')
+    .replace('cambió Liquidación a EMITIDA', 'cambió Liquidación a CONFIRMADA');
 
   return (
     <div className="space-y-6">
@@ -43,8 +52,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
                     <span className="bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded text-[10px]">{log.user}</span>
                   </div>
 
-                  <h5 className="font-bold text-slate-900 text-xs">{log.action}</h5>
-                  <p className="text-slate-600 text-xs">{log.detail}</p>
+                  <h5 className="font-bold text-slate-900 text-xs">{getDisplayAction(log.action)}</h5>
+                  <p className="text-slate-600 text-xs">{getDisplayDetail(log.detail)}</p>
                 </div>
               </div>
             ))}
