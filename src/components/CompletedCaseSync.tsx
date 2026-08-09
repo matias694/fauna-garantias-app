@@ -4,11 +4,12 @@ import { formatDate } from '../utils/formatters';
 
 /**
  * Keeps the operational state of completed/closed cases coherent.
- * - A fully paid receivable leaves the case ready only for the final "Cerrar caso" action.
+ * - Any completed case is left ready only for the final "Cerrar caso" action.
  * - A closed case has no active blocker or pending next-management action.
+ * - Unrelated blockers are preserved and are never cleared automatically.
  */
 export const CompletedCaseSync: React.FC = () => {
-  const { cases, receivables, updateGuaranteeCase } = useApp();
+  const { cases, updateGuaranteeCase } = useApp();
 
   useEffect(() => {
     cases.forEach(c => {
@@ -32,10 +33,7 @@ export const CompletedCaseSync: React.FC = () => {
         return;
       }
 
-      if (!c.receivableId) return;
-
-      const receivable = receivables.find(r => r.id === c.receivableId);
-      if (!receivable || receivable.status !== 'PAGADA' || receivable.pendingBalance > 0) return;
+      if (!c.isCompleted) return;
 
       const hasUnrelatedBlock = c.blockedBy !== 'SIN_BLOQUEO' && c.blockedBy !== 'ARRENDATARIO';
       if (hasUnrelatedBlock) return;
@@ -57,7 +55,7 @@ export const CompletedCaseSync: React.FC = () => {
         nextManagementResponsible: c.responsible || ''
       });
     });
-  }, [cases, receivables, updateGuaranteeCase]);
+  }, [cases, updateGuaranteeCase]);
 
   return null;
 };
