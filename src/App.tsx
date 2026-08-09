@@ -13,6 +13,7 @@ import { CompletedCaseSync } from './components/CompletedCaseSync';
 import { ExactBalanceDemoSeeder } from './components/ExactBalanceDemoSeeder';
 import { FullCoverageDemoSeeder } from './components/FullCoverageDemoSeeder';
 import { FullCoverageCaseBanner } from './components/FullCoverageCaseBanner';
+import { FullCoverageSync } from './components/FullCoverageSync';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -51,6 +52,7 @@ export default function App() {
   return (
     <AppProvider>
       <LegacyReceivableReconciler />
+      <FullCoverageSync />
       <CompletedCaseSync />
       <ExactBalanceDemoSeeder />
       <FullCoverageDemoSeeder />
