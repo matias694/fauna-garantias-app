@@ -1,13 +1,13 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { calculateGuaranteeFinances } from '../utils/calculations';
+import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
 import { formatCLP, formatDate } from '../utils/formatters';
-import { Banknote, ShieldCheck } from 'lucide-react';
+import { Banknote, ShieldCheck, WalletCards } from 'lucide-react';
 
 /**
- * Desglose interno de Plan Full.
- * Separa lo requerido/aplicable por la liquidación de lo efectivamente
- * aportado o desembolsado, para no inflar los reportes de recuperación.
+ * Bloque operativo para garantías insuficientes.
+ * Distingue claramente cálculo, provisión efectiva del propietario y ejecución
+ * real de la cobertura Full. Una aprobación sin fondos no habilita gastos.
  */
 export const FullCoverageCaseBanner: React.FC = () => {
   const {
@@ -24,53 +24,27 @@ export const FullCoverageCaseBanner: React.FC = () => {
   if (activeView !== 'case-detail' || !selectedCaseId) return null;
 
   const guaranteeCase = cases.find(c => c.id === selectedCaseId);
-  if (!guaranteeCase || guaranteeCase.plan !== 'FULL') return null;
+  if (!guaranteeCase) return null;
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   if (!fin.isInsufficient) return null;
 
+  const readiness = calculateFundingReadiness(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
-  const isIssued = guaranteeCase.liquidationStatus === 'EMITIDA';
-
-  const ownerRequired = fin.ownerContributionRequired;
-  const faunaRequired = fin.faunaFinancingRequired;
-
-  // Los saldos del caso/receivable disminuyen cuando se recupera dinero.
-  // Para saber cuánto fue efectivamente aportado/desembolsado históricamente,
-  // usamos los movimientos financieros originales y no el saldo vigente.
-  const ownerFundingMovements = guaranteeCase.movements
-    .filter(m => m.type === 'APORTE_PROPIETARIO')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const faunaFundingMovements = guaranteeCase.movements
-    .filter(m => m.type === 'FINANCIAMIENTO_FAUNA')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const ownerRecoveries = guaranteeCase.movements
-    .filter(m => m.type === 'RECUPERACION_PROPIETARIO')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const faunaRecoveries = guaranteeCase.movements
-    .filter(m => m.type === 'RECUPERACION_FAUNA')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-
-  // Compatibilidad con casos anteriores que pudieran no tener movimiento de origen.
-  const ownerFundedTotal = ownerFundingMovements > 0
-    ? ownerFundingMovements
-    : (guaranteeCase.ownerContribution || 0) + ownerRecoveries;
-  const faunaFundedTotal = faunaFundingMovements > 0
-    ? faunaFundingMovements
-    : (guaranteeCase.faunaFinancing || 0) + faunaRecoveries;
+  const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
+  const isFull = guaranteeCase.plan === 'FULL';
 
   const ownerCurrentBalance = guaranteeCase.ownerContribution || 0;
   const faunaCurrentBalance = guaranteeCase.faunaFinancing || 0;
   const ownerToRecover = receivable ? receivable.ownerContributionToRecover : ownerCurrentBalance;
   const faunaToRecover = receivable ? receivable.faunaFinancingToRecover : faunaCurrentBalance;
 
-  const ownerRemainingToFund = Math.max(0, ownerRequired - ownerFundedTotal);
-  const faunaRemainingToFund = Math.max(0, faunaRequired - faunaFundedTotal);
+  const registerFundingMovement = (type: 'OWNER' | 'FULL') => {
+    if (isConfirmed) return;
 
-  const registerFundingMovement = (type: 'OWNER' | 'FAUNA') => {
-    if (isIssued) return;
-
-    const amount = type === 'OWNER' ? ownerRemainingToFund : faunaRemainingToFund;
+    const amount = type === 'OWNER'
+      ? readiness.ownerPendingProvision
+      : readiness.fullCoveragePendingExecution;
     if (amount <= 0) return;
 
     const today = formatDate(new Date().toISOString().split('T')[0]);
@@ -84,11 +58,11 @@ export const FullCoverageCaseBanner: React.FC = () => {
         date: today,
         time,
         type: 'APORTE_PROPIETARIO',
-        description: `Aporte efectivo del propietario (${guaranteeCase.ownerName})`,
+        description: `Provisión de fondos recibida del propietario (${guaranteeCase.ownerName})`,
         amount,
         user: userRole,
-        reference: `APORTE-PROP-${guaranteeCase.id}`,
-        observation: 'Aporte efectivamente recibido para cubrir saldo fuera de cobertura Full'
+        reference: `PROVISION-PROP-${guaranteeCase.id}`,
+        observation: 'Fondos efectivamente recibidos del propietario antes de ejecutar gastos fuera del presupuesto disponible'
       });
       return;
     }
@@ -100,90 +74,96 @@ export const FullCoverageCaseBanner: React.FC = () => {
       date: today,
       time,
       type: 'FINANCIAMIENTO_FAUNA',
-      description: 'Desembolso efectivo de financiamiento Fauna por cobertura Full',
+      description: 'Ejecución efectiva de cobertura Plan Full por Fauna',
       amount,
       user: userRole,
-      reference: `FIN-FAUNA-${guaranteeCase.id}`,
-      observation: 'Fondos efectivamente desembolsados por Fauna para ejecutar la cobertura Full'
+      reference: `COBERTURA-FULL-${guaranteeCase.id}`,
+      observation: 'Cobertura Plan Full efectivamente desembolsada para cubrir daños de salida'
     });
   };
 
-  const ownerFundingComplete = ownerRemainingToFund === 0;
-  const faunaFundingComplete = faunaRemainingToFund === 0;
-  const fundingWasCompleteAtSomePoint =
-    ownerFundedTotal >= ownerRequired && faunaFundedTotal >= faunaRequired;
+  const ownerProvisionComplete = readiness.ownerPendingProvision === 0;
+  const fullCoverageComplete = readiness.fullCoveragePendingExecution === 0;
 
   return (
     <div className="px-4 sm:px-6 pt-5 max-w-7xl mx-auto">
       <section className="bg-emerald-950 text-white rounded-2xl border border-emerald-900 shadow-sm p-4 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-300" />
+            {isFull ? <ShieldCheck className="w-5 h-5 text-emerald-300" /> : <WalletCards className="w-5 h-5 text-emerald-300" />}
             <div>
-              <h3 className="font-extrabold text-sm">Desglose interno · Plan Full</h3>
+              <h3 className="font-extrabold text-sm">
+                {isFull ? 'Fondos de salida · Plan Full' : 'Fondos para completar la salida'}
+              </h3>
               <p className="text-[11px] text-emerald-200">
-                La liquidación calcula lo requerido; el reporte financiero solo reconoce dinero efectivamente aportado o desembolsado.
+                El cálculo determina cuánto falta; solo se considera disponible el dinero que efectivamente fue recibido o desembolsado.
               </p>
             </div>
           </div>
           <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-emerald-800 border border-emerald-700">
-            {isIssued ? 'Liquidación emitida' : 'Proyección antes de emitir'}
+            {isConfirmed ? 'Liquidación confirmada' : 'Proyección antes de confirmar'}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${isFull ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-2`}>
           <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Cobertura Full aplicable</span>
-            <strong className="text-lg font-black font-mono">{formatCLP(fin.fullCoverageApplied)}</strong>
-            <span className="text-[10px] text-emerald-200 block">Máximo aplicable a daños según la liquidación</span>
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Garantía disponible</span>
+            <strong className="text-lg font-black font-mono">{formatCLP(fin.guaranteeAmount)}</strong>
+            <span className="text-[10px] text-emerald-200 block">Presupuesto base disponible para la salida</span>
           </div>
 
+          {isFull && (
+            <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1.5">
+              <span className="text-[10px] uppercase font-bold text-emerald-200 block">Cobertura Plan Full</span>
+              <strong className="text-lg font-black font-mono">{formatCLP(readiness.fullCoverageRequired)}</strong>
+              <span className="text-[10px] text-emerald-200 block">
+                {isConfirmed
+                  ? `Por recuperar: ${formatCLP(faunaToRecover)}`
+                  : `Ejecutada efectivamente: ${formatCLP(readiness.fullCoverageExecutedTotal)}`}
+              </span>
+              {!isConfirmed && readiness.fullCoverageRequired > 0 && (
+                <button
+                  type="button"
+                  onClick={() => registerFundingMovement('FULL')}
+                  disabled={fullCoverageComplete}
+                  className={`mt-1 w-full px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold inline-flex items-center justify-center gap-1.5 transition-colors ${
+                    fullCoverageComplete
+                      ? 'bg-emerald-800/70 text-emerald-200 cursor-default'
+                      : 'bg-white text-emerald-950 hover:bg-emerald-50 cursor-pointer'
+                  }`}
+                >
+                  <Banknote className="w-3.5 h-3.5" />
+                  {fullCoverageComplete
+                    ? 'Cobertura ejecutada'
+                    : `Registrar ejecución ${formatCLP(readiness.fullCoveragePendingExecution)}`}
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1.5">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Aporte propietario requerido</span>
-            <strong className="text-lg font-black font-mono">{formatCLP(ownerRequired)}</strong>
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Diferencia a cargo del propietario</span>
+            <strong className="text-lg font-black font-mono">{formatCLP(readiness.ownerRequired)}</strong>
             <span className="text-[10px] text-emerald-200 block">
-              {isIssued
-                ? `Por recuperar: ${formatCLP(ownerToRecover)}`
-                : `Aportado efectivamente: ${formatCLP(ownerFundedTotal)}`}
+              {isConfirmed
+                ? `Por devolver al propietario: ${formatCLP(ownerToRecover)}`
+                : `Fondos provisionados: ${formatCLP(readiness.ownerProvisionedTotal)}`}
             </span>
-            {!isIssued && ownerRequired > 0 && (
+            {!isConfirmed && readiness.ownerRequired > 0 && (
               <button
                 type="button"
                 onClick={() => registerFundingMovement('OWNER')}
-                disabled={ownerFundingComplete}
+                disabled={ownerProvisionComplete}
                 className={`mt-1 w-full px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold inline-flex items-center justify-center gap-1.5 transition-colors ${
-                  ownerFundingComplete
+                  ownerProvisionComplete
                     ? 'bg-emerald-800/70 text-emerald-200 cursor-default'
                     : 'bg-white text-emerald-950 hover:bg-emerald-50 cursor-pointer'
                 }`}
               >
                 <Banknote className="w-3.5 h-3.5" />
-                {ownerFundingComplete ? 'Aporte registrado' : `Registrar aporte ${formatCLP(ownerRemainingToFund)}`}
-              </button>
-            )}
-          </div>
-
-          <div className="bg-white/10 rounded-xl p-3 border border-white/10 space-y-1.5">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Financiamiento Fauna requerido</span>
-            <strong className="text-lg font-black font-mono">{formatCLP(faunaRequired)}</strong>
-            <span className="text-[10px] text-emerald-200 block">
-              {isIssued
-                ? `Por recuperar: ${formatCLP(faunaToRecover)}`
-                : `Desembolsado efectivamente: ${formatCLP(faunaFundedTotal)}`}
-            </span>
-            {!isIssued && faunaRequired > 0 && (
-              <button
-                type="button"
-                onClick={() => registerFundingMovement('FAUNA')}
-                disabled={faunaFundingComplete}
-                className={`mt-1 w-full px-2.5 py-1.5 rounded-lg text-[10px] font-extrabold inline-flex items-center justify-center gap-1.5 transition-colors ${
-                  faunaFundingComplete
-                    ? 'bg-emerald-800/70 text-emerald-200 cursor-default'
-                    : 'bg-white text-emerald-950 hover:bg-emerald-50 cursor-pointer'
-                }`}
-              >
-                <Banknote className="w-3.5 h-3.5" />
-                {faunaFundingComplete ? 'Desembolso registrado' : `Registrar desembolso ${formatCLP(faunaRemainingToFund)}`}
+                {ownerProvisionComplete
+                  ? 'Provisión registrada'
+                  : `Registrar provisión ${formatCLP(readiness.ownerPendingProvision)}`}
               </button>
             )}
           </div>
@@ -191,24 +171,39 @@ export const FullCoverageCaseBanner: React.FC = () => {
           <div className="bg-white/10 rounded-xl p-3 border border-white/10">
             <span className="text-[10px] uppercase font-bold text-emerald-200 block">Deuda arrendatario</span>
             <strong className="text-lg font-black font-mono">{formatCLP(receivable?.pendingBalance ?? fin.tenantDeficit)}</strong>
-            <span className="text-[10px] text-emerald-200 block">La cobertura no extingue su deuda</span>
+            <span className="text-[10px] text-emerald-200 block">
+              {isFull ? 'La cobertura Full no extingue su deuda' : 'La diferencia sigue siendo deuda del arrendatario'}
+            </span>
           </div>
         </div>
 
-        {!isIssued && (!ownerFundingComplete || !faunaFundingComplete) && (
+        {!isConfirmed && readiness.ownerPendingProvision > 0 && (
           <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2 text-[11px] text-amber-100">
-            Los montos requeridos aún no se consideran “por recuperar”. Registra solo los aportes o desembolsos que efectivamente hayan ocurrido antes de emitir la liquidación.
+            <strong>Pendiente de provisión del propietario: {formatCLP(readiness.ownerPendingProvision)}.</strong>{' '}
+            Fauna no debe financiar esta diferencia. Si el propietario no provisiona los fondos, ajusta las reparaciones y cargos al presupuesto efectivamente disponible antes de confirmar la liquidación.
           </div>
         )}
 
-        {isIssued && !fundingWasCompleteAtSomePoint && (
+        {!isConfirmed && isFull && readiness.ownerPendingProvision === 0 && readiness.fullCoveragePendingExecution > 0 && (
           <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2 text-[11px] text-amber-100">
-            Esta liquidación fue emitida sin registrar todos los desembolsos requeridos. Por eso el reporte de recuperación solo incluye los montos que sí fueron registrados efectivamente.
+            Falta registrar la ejecución efectiva de la cobertura Plan Full por {formatCLP(readiness.fullCoveragePendingExecution)} antes de dar por completados los fondos de esta salida.
+          </div>
+        )}
+
+        {!isConfirmed && readiness.readyToConfirm && (
+          <div className="bg-emerald-300/10 border border-emerald-300/30 rounded-xl px-3 py-2 text-[11px] text-emerald-100">
+            <strong>Fondos necesarios registrados.</strong> Revisa los documentos y, si los cargos son definitivos, confirma la liquidación.
+          </div>
+        )}
+
+        {isConfirmed && !readiness.readyToConfirm && (
+          <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2 text-[11px] text-amber-100">
+            Este caso histórico fue confirmado sin que todos los fondos requeridos quedaran registrados. El reporte solo reconoce movimientos que efectivamente ocurrieron.
           </div>
         )}
 
         <p className="text-[11px] text-emerald-100">
-          Si el arrendatario paga posteriormente, la recuperación se imputa primero al aporte efectivamente realizado por el propietario y luego al financiamiento efectivamente desembolsado por Fauna.
+          Si el arrendatario paga posteriormente, la recuperación se imputa primero a la provisión efectivamente recibida del propietario y luego a la cobertura Full efectivamente desembolsada por Fauna cuando corresponda.
         </p>
       </section>
     </div>
