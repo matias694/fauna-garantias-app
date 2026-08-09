@@ -54,8 +54,14 @@ export const ReceivablesList: React.FC = () => {
 
   const totalPorCobrar = receivables.reduce((sum, r) => sum + r.pendingBalance, 0);
 
+  // La gestión operativa vive en el caso. La cuenta por cobrar conserva datos históricos,
+  // pero para alertas y pantalla usamos la próxima gestión vigente del caso como fuente de verdad.
   const totalVencido = receivables
-    .filter(r => r.pendingBalance > 0 && isOverdue(r.nextManagementDate))
+    .filter(r => {
+      const correspondingCase = cases.find(c => c.id === r.caseId);
+      const operationalDate = correspondingCase?.nextManagementDate || r.nextManagementDate;
+      return r.pendingBalance > 0 && isOverdue(operationalDate);
+    })
     .reduce((sum, r) => sum + r.pendingBalance, 0);
 
   // Solo se suma el dinero efectivamente recibido del arrendatario.
@@ -182,8 +188,10 @@ export const ReceivablesList: React.FC = () => {
                 {filtered.map(r => {
                   const correspondingCase = cases.find(c => c.id === r.caseId);
                   const responsibleName = correspondingCase?.nextManagementResponsible || correspondingCase?.responsible || 'Sin responsable';
-                  const overdueMgmt = r.nextManagementDate && isOverdue(r.nextManagementDate);
-                  const formattedDate = formatShortDateStr(r.nextManagementDate);
+                  const operationalNextManagement = correspondingCase?.nextManagement || r.nextManagement;
+                  const operationalNextDate = correspondingCase?.nextManagementDate || r.nextManagementDate;
+                  const overdueMgmt = operationalNextDate && isOverdue(operationalNextDate);
+                  const formattedDate = formatShortDateStr(operationalNextDate);
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
@@ -216,7 +224,7 @@ export const ReceivablesList: React.FC = () => {
                       <td className="p-3.5 max-w-xs">
                         <div className="space-y-1">
                           <span className="text-slate-800 font-semibold text-xs block truncate">
-                            {r.nextManagement || <span className="text-rose-500 italic">Sin gestión</span>}
+                            {operationalNextManagement || <span className="text-rose-500 italic">Sin gestión</span>}
                           </span>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${

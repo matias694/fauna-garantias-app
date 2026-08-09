@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Receivable } from '../types';
-import { formatCLP } from '../utils/formatters';
+import { formatCLP, formatDate } from '../utils/formatters';
 import { calculatePaymentDistribution } from '../utils/calculations';
 import { X, DollarSign, ShieldCheck } from 'lucide-react';
 
@@ -12,7 +12,7 @@ interface RecordPaymentModalProps {
 }
 
 export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, onClose, receivable }) => {
-  const { recordTenantPayment } = useApp();
+  const { recordTenantPayment, updateGuaranteeCase, cases } = useApp();
 
   const [paymentAmount, setPaymentAmount] = useState<number>(100000);
   const [notes, setNotes] = useState('');
@@ -38,7 +38,23 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
       return;
     }
 
+    const newPending = Math.max(0, receivable.pendingBalance - paymentAmount);
     recordTenantPayment(receivable.id, paymentAmount, notes);
+
+    // Si todavía queda deuda, la próxima acción ya no puede seguir apuntando
+    // a la emisión de la liquidación ni a una cuota anterior.
+    if (newPending > 0) {
+      const guaranteeCase = cases.find(c => c.id === receivable.caseId);
+      const today = formatDate(new Date().toISOString().split('T')[0]);
+
+      updateGuaranteeCase(receivable.caseId, {
+        nextManagement: `Gestionar saldo pendiente con arrendatario (${formatCLP(newPending)})`,
+        nextManagementDate: today,
+        nextManagementResponsible:
+          guaranteeCase?.nextManagementResponsible || guaranteeCase?.responsible || ''
+      });
+    }
+
     alert('Pago registrado con éxito y fondos distribuidos automáticamente.');
     onClose();
   };
