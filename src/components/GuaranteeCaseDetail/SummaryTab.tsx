@@ -45,6 +45,37 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
       ? `Debe ${formatCLP(fin.tenantDeficit)}`
       : 'Sin saldo';
 
+  const formatClosedAt = (value?: string) => {
+    if (!value) return 'Fecha no registrada';
+
+    const legacy = value.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4}),?\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap])\.?\s*m\.?$/i);
+    if (legacy) {
+      const [, day, month, year, rawHour, minute, period] = legacy;
+      let hour = Number(rawHour);
+      if (period.toLowerCase() === 'p' && hour < 12) hour += 12;
+      if (period.toLowerCase() === 'a' && hour === 12) hour = 0;
+      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year} · ${String(hour).padStart(2, '0')}:${minute}`;
+    }
+
+    const simple = value.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[ T,]+(\d{1,2}):(\d{2})(?::\d{2})?)?$/);
+    if (simple) {
+      const [, day, month, year, hour, minute] = simple;
+      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}${hour && minute ? ` · ${hour.padStart(2, '0')}:${minute}` : ''}`;
+    }
+
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      const day = String(parsed.getDate()).padStart(2, '0');
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const year = parsed.getFullYear();
+      const hour = String(parsed.getHours()).padStart(2, '0');
+      const minute = String(parsed.getMinutes()).padStart(2, '0');
+      return `${day}/${month}/${year} · ${hour}:${minute}`;
+    }
+
+    return value;
+  };
+
   return (
     <div className="space-y-5">
       <section className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-md space-y-4">
@@ -114,7 +145,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
             <div className="sm:text-right text-xs">
               <span className="text-slate-400 block">Cierre / Responsable</span>
               <strong className="text-emerald-300">
-                {guaranteeCase.closedAt || 'Fecha no registrada'} · {guaranteeCase.closedBy || 'Sin responsable'}
+                {formatClosedAt(guaranteeCase.closedAt)} · {guaranteeCase.closedBy || 'Sin responsable'}
               </strong>
             </div>
           </div>
