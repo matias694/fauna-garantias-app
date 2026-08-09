@@ -10,13 +10,14 @@ interface SummaryTabProps {
 }
 
 export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
-  const { updateGuaranteeCase, settings } = useApp();
+  const { updateGuaranteeCase, settings, receivables } = useApp();
 
   const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || '');
   const [nextDate, setNextDate] = useState(guaranteeCase.nextManagementDate || '');
   const [nextResp, setNextResp] = useState(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
   const isOverdue = daysInProcess > settings.maxLiquidationDays;
   const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
@@ -61,6 +62,11 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
               <strong className={`text-xs ${fin.isSurplus ? 'text-emerald-300' : fin.isInsufficient ? 'text-rose-300' : 'text-slate-200'}`}>
                 {resultLabel}
               </strong>
+              {receivable && receivable.pendingBalance > 0 && (
+                <span className="text-[10px] text-rose-200 block mt-0.5">
+                  Saldo vigente: {formatCLP(receivable.pendingBalance)}
+                </span>
+              )}
             </div>
 
             {guaranteeCase.blockedBy !== 'SIN_BLOQUEO' && (
@@ -124,10 +130,15 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
         </div>
 
         <div className={`p-4 rounded-xl border shadow-xs ${fin.isSurplus ? 'bg-emerald-50 border-emerald-200' : fin.isInsufficient ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
-          <span className="text-[10px] font-bold text-slate-500 uppercase block">Resultado</span>
+          <span className="text-[10px] font-bold text-slate-500 uppercase block">Resultado liquidación</span>
           <span className={`text-lg font-black ${fin.isSurplus ? 'text-emerald-800' : fin.isInsufficient ? 'text-rose-800' : 'text-slate-800'}`}>
             {resultLabel}
           </span>
+          {receivable && receivable.pendingBalance > 0 && (
+            <span className="text-[11px] text-rose-700 font-bold block mt-1">
+              Saldo actual por cobrar: {formatCLP(receivable.pendingBalance)}
+            </span>
+          )}
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -135,6 +146,9 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           <div className="text-xs text-slate-700 mt-1 space-y-1">
             <div>Devolución: <strong>{guaranteeCase.refund?.status || 'No aplica'}</strong></div>
             <div>Por cobrar: <strong>{guaranteeCase.receivableStatus?.replace(/_/g, ' ') || 'No aplica'}</strong></div>
+            {receivable && (
+              <div>Saldo vigente: <strong className={receivable.pendingBalance > 0 ? 'text-rose-700' : 'text-emerald-700'}>{formatCLP(receivable.pendingBalance)}</strong></div>
+            )}
           </div>
         </div>
       </section>
