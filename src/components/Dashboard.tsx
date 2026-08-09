@@ -20,30 +20,32 @@ export const Dashboard: React.FC = () => {
   const { cases, receivables, setSelectedCaseId, setActiveView } = useApp();
 
   const openCases = cases.filter(c => !c.isClosed);
+  const activeCases = openCases.filter(c => !c.isCompleted);
+  const completedPendingClose = openCases.filter(c => c.isCompleted);
 
   // 1. Top KPI Metrics (Max 4)
   const casosAbiertos = openCases.length;
 
-  const casosVencidos = openCases.filter(c => calculateDaysDifference(c.receptionDate) > 60).length;
-  const casosProximosVencer = openCases.filter(c => {
+  const casosVencidos = activeCases.filter(c => calculateDaysDifference(c.receptionDate) > 60).length;
+  const casosProximosVencer = activeCases.filter(c => {
     const days = calculateDaysDifference(c.receptionDate);
     return days >= 45 && days <= 60;
   }).length;
   const porVencer = casosVencidos + casosProximosVencer;
 
-  const enReparacion = openCases.filter(c => c.preparationStatus === 'REPARANDO').length;
+  const enReparacion = activeCases.filter(c => c.preparationStatus === 'REPARANDO').length;
 
   const totalPendienteCobrar = receivables.reduce((acc, r) => acc + r.pendingBalance, 0);
-  const financiamientoFaunaVigente = openCases.reduce((acc, c) => acc + (c.faunaFinancing || 0), 0);
+  const financiamientoFaunaVigente = activeCases.reduce((acc, c) => acc + (c.faunaFinancing || 0), 0);
   const pendienteFinanciero = totalPendienteCobrar + financiamientoFaunaVigente;
 
   // 2. Preparation & Liquidation Counters
-  const pendientesPreparacion = openCases.filter(c => c.preparationStatus === 'PENDIENTE').length;
-  const preparadasListas = openCases.filter(c => c.preparationStatus === 'LISTA').length;
+  const pendientesPreparacion = activeCases.filter(c => c.preparationStatus === 'PENDIENTE').length;
+  const preparadasListas = activeCases.filter(c => c.preparationStatus === 'LISTA').length;
 
-  const enPreparacionLiquidation = openCases.filter(c => c.liquidationStatus === 'EN_PREPARACION').length;
-  const listasParaLiquidar = openCases.filter(c => c.liquidationStatus === 'LISTA').length;
-  const emitidasLiquidation = openCases.filter(c => c.liquidationStatus === 'EMITIDA').length;
+  const enPreparacionLiquidation = activeCases.filter(c => c.liquidationStatus === 'EN_PREPARACION').length;
+  const listasParaLiquidar = activeCases.filter(c => c.liquidationStatus === 'LISTA').length;
+  const emitidasLiquidation = activeCases.filter(c => c.liquidationStatus === 'EMITIDA').length;
 
   // Faltantes de requisitos más frecuentes (Requisitos en estado PENDIENTE)
   const faltantesCounts = {
@@ -54,7 +56,7 @@ export const Dashboard: React.FC = () => {
     gas: 0
   };
 
-  openCases.forEach(c => {
+  activeCases.forEach(c => {
     if (c.liquidationStatus === 'EN_PREPARACION') {
       c.requirements.forEach(req => {
         if (req.status === 'PENDIENTE') {
@@ -70,7 +72,7 @@ export const Dashboard: React.FC = () => {
   });
 
   // 3. Estado Financiero Interno
-  const aportesPropietariosPendientes = openCases.reduce((acc, c) => acc + (c.ownerContribution || 0), 0);
+  const aportesPropietariosPendientes = activeCases.reduce((acc, c) => acc + (c.ownerContribution || 0), 0);
 
   // Recuperado por Fauna Este Mes
   let recuperadoFaunaEsteMes = 0;
@@ -134,12 +136,17 @@ export const Dashboard: React.FC = () => {
   };
 
   // 4. Prioritization for Cases Needing Attention
+  // 0. Casos completados pendientes de cierre final
   // 1. Próximas gestiones vencidas
   // 2. Casos próximos al plazo máximo (>45d or >60d)
   // 3. Reparaciones atrasadas
   // 4. Casos bloqueados
   // 5. Casos abiertos sin próxima gestión
   const getAttentionCategory = (c: typeof openCases[0]) => {
+    if (c.isCompleted) {
+      return { priority: 0, reason: 'Caso completado · pendiente de cerrar' };
+    }
+
     const daysOpen = calculateDaysDifference(c.receptionDate);
     const managementOverdue = c.nextManagementDate && isOverdue(c.nextManagementDate);
     const deadlineAlert = daysOpen >= 45;
@@ -199,7 +206,9 @@ export const Dashboard: React.FC = () => {
               <Building2 className="w-4 h-4" />
             </div>
           </div>
-          <p className="text-[10px] text-slate-500 font-medium mt-2">Garantías en gestión operativa</p>
+          <p className="text-[10px] text-slate-500 font-medium mt-2">
+            {activeCases.length} en gestión · {completedPendingClose.length} listos para cerrar
+          </p>
         </div>
 
         {/* KPI 2: Por Vencer */}
@@ -291,6 +300,7 @@ export const Dashboard: React.FC = () => {
             {prioritizedCases.map(({ caseObj, category }) => {
               const overdueMgmt = caseObj.nextManagementDate && isOverdue(caseObj.nextManagementDate);
               const formattedDate = formatShortDateStr(caseObj.nextManagementDate);
+              const isReadyToClose = Boolean(caseObj.isCompleted);
 
               return (
                 <div 
@@ -310,9 +320,13 @@ export const Dashboard: React.FC = () => {
                       
                       {/* Reason Tag */}
                       <div className="mt-1 flex items-center gap-2 flex-wrap">
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-100 text-rose-900 border border-rose-200 inline-flex items-center gap-1">
-                          <ShieldAlert className="w-3 h-3 text-rose-600" />
-                          Motivo: {category?.reason}
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border inline-flex items-center gap-1 ${isReadyToClose ? 'bg-emerald-100 text-emerald-900 border-emerald-200' : 'bg-rose-100 text-rose-900 border-rose-200'}`}>
+                          {isReadyToClose ? (
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <ShieldAlert className="w-3 h-3 text-rose-600" />
+                          )}
+                          {isReadyToClose ? category?.reason : `Motivo: ${category?.reason}`}
                         </span>
 
                         {/* Optional Blocked Badge */}
@@ -386,7 +400,7 @@ export const Dashboard: React.FC = () => {
               <p className="text-xs text-slate-500 font-medium">Contadores de estado y detección de cuellos de botella</p>
             </div>
             <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
-              {openCases.length} casos activos
+              {activeCases.length} casos activos
             </span>
           </div>
 
