@@ -1,0 +1,1 @@
+Regression note: HTML number input previously used min=1 with step=5000. Because step validity is calculated from the minimum, values such as 200000 were rejected by the browser. The payment input now uses step=1 so exact CLP amounts are accepted while the existing application validation still prevents values <= 0 or above the pending balance.
