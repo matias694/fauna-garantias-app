@@ -133,7 +133,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
               <option value="ALL">Todos los Estados</option>
               <option value="EN_PREPARACION">En preparación</option>
               <option value="LISTA">Lista</option>
-              <option value="EMITIDA">Emitida</option>
+              <option value="EMITIDA">Confirmada</option>
             </select>
           </div>
 
@@ -198,6 +198,11 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                 const fin = calculateGuaranteeFinances(c, settings);
                 const overdueMgmt = !c.isClosed && Boolean(c.nextManagementDate) && isOverdue(c.nextManagementDate);
                 const formattedDate = formatShortDateStr(c.nextManagementDate);
+                const liquidationLabel = c.liquidationStatus === 'EN_PREPARACION'
+                  ? 'EN PREPARACIÓN'
+                  : c.liquidationStatus === 'EMITIDA'
+                    ? 'CONFIRMADA'
+                    : c.liquidationStatus;
 
                 return (
                   <tr key={c.id} className={`hover:bg-slate-50/80 transition-colors ${c.isClosed ? 'bg-slate-50/60' : ''}`}>
@@ -219,7 +224,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
 
                     <td className="p-3.5 whitespace-nowrap">
                       <span className="px-2 py-0.5 rounded-md font-bold text-[10px] bg-slate-100 text-slate-800 border border-slate-200">
-                        {c.liquidationStatus === 'EN_PREPARACION' ? 'EN PREPARACIÓN' : c.liquidationStatus}
+                        {liquidationLabel}
                       </span>
                     </td>
 
