@@ -60,8 +60,15 @@ export function calculateGuaranteeFinances(
     fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
   }
 
-  const ownerContributionRequired = c.ownerContribution || 0;
-  const faunaFinancingRequired = c.faunaFinancing || 0;
+  // Estos montos son NECESIDADES de la liquidación, no desembolsos realizados.
+  // Los desembolsos efectivos siguen viviendo en c.ownerContribution y c.faunaFinancing
+  // y solo deben aumentar cuando se registra el movimiento financiero correspondiente.
+  const ownerContributionRequired = isInsufficient
+    ? Math.max(0, tenantDeficit - fullCoverageApplied)
+    : 0;
+  const faunaFinancingRequired = c.plan === 'FULL' && isInsufficient
+    ? fullCoverageApplied
+    : 0;
 
   // La cobertura Full protege al propietario, pero no extingue la deuda del arrendatario.
   const tenantReceivableAmount = tenantDeficit;

@@ -107,6 +107,8 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.isInsufficient, true);
   assert.equal(fin.tenantDeficit, 300000);
+  assert.equal(fin.ownerContributionRequired, 300000);
+  assert.equal(fin.faunaFinancingRequired, 0);
   assert.equal(isCaseCompleted(c), false);
   assert.equal(isCaseCompleted({ ...c, receivableStatus: 'PAGADA' }), true);
   assert.equal(isCaseCompleted({ ...c, receivableStatus: 'INCOBRABLE' }), true);
@@ -120,11 +122,14 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 }
 
 // 4) Plan Full: cobertura adicional = 100% del monto de garantía, no del arriendo
+// y los montos requeridos no implican que ya hayan sido desembolsados.
 {
   const c = baseCase({
     plan: 'FULL',
     guaranteeAmount: 400000,
     monthlyRent: 450000,
+    ownerContribution: 0,
+    faunaFinancing: 0,
     charges: [
       {
         id: 'CHG-4', category: 'REPARACIONES', description: 'Daños ficticios', amount: 800000,
@@ -142,6 +147,10 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(fin.fullCoverageLimit, 400000);
   assert.equal(fin.fullCoverageApplied, 400000);
   assert.equal(fin.tenantDeficit, 500000);
+  assert.equal(fin.ownerContributionRequired, 100000);
+  assert.equal(fin.faunaFinancingRequired, 400000);
+  assert.equal(c.ownerContribution, 0);
+  assert.equal(c.faunaFinancing, 0);
 }
 
 console.log('✓ Reglas de negocio principales validadas: 4 escenarios OK');
