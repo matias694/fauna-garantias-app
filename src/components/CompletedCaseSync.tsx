@@ -23,7 +23,7 @@ export const CompletedCaseSync: React.FC = () => {
       const needsCleanup =
         c.blockedBy === 'ARRENDATARIO' ||
         c.nextManagement !== 'Cerrar caso' ||
-        Boolean(c.nextManagementDate?.trim() === false);
+        !c.nextManagementDate?.trim();
 
       if (!needsCleanup) {
         synced.current.add(c.id);
