@@ -10,6 +10,7 @@ import { SettingsView } from './components/SettingsView';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
+import { ExactBalanceDemoSeeder } from './components/ExactBalanceDemoSeeder';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -44,6 +45,7 @@ export default function App() {
     <AppProvider>
       <LegacyReceivableReconciler />
       <CompletedCaseSync />
+      <ExactBalanceDemoSeeder />
       <MainContent />
     </AppProvider>
   );
