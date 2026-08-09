@@ -8,6 +8,7 @@ import { GuaranteeCaseDetail } from './components/GuaranteeCaseDetail/GuaranteeC
 import { ReceivablesList } from './components/ReceivablesList';
 import { SettingsView } from './components/SettingsView';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
+import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -15,17 +16,11 @@ const MainContent: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-slate-100 font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
-      
-      {/* Sidebar Navigation */}
       <Sidebar />
 
-      {/* Main Container */}
       <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
-        
-        {/* Top Header Bar */}
         <Header onOpenNewModal={() => setIsNewModalOpen(true)} />
 
-        {/* Dynamic View Area */}
         <main className="flex-1 pb-12">
           {activeView === 'dashboard' && <Dashboard />}
           {activeView === 'guarantees' && <GuaranteesList onOpenNewModal={() => setIsNewModalOpen(true)} />}
@@ -35,12 +30,10 @@ const MainContent: React.FC = () => {
         </main>
       </div>
 
-      {/* New Guarantee Modal */}
       <NewGuaranteeModal
         isOpen={isNewModalOpen}
         onClose={() => setIsNewModalOpen(false)}
       />
-
     </div>
   );
 };
@@ -48,6 +41,7 @@ const MainContent: React.FC = () => {
 export default function App() {
   return (
     <AppProvider>
+      <LegacyReceivableReconciler />
       <MainContent />
     </AppProvider>
   );
