@@ -67,47 +67,25 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 // 1) Garantía con devolución
 {
   const c = baseCase({
-    charges: [
-      {
-        id: 'CHG-1',
-        category: 'REPARACIONES',
-        description: 'Cargo ficticio',
-        amount: 300000,
-        date: '01/07/2026',
-        type: 'DAÑO_REPARACION',
-        notes: '',
-        documents: [],
-        photos: []
-      }
-    ]
+    charges: [{
+      id: 'CHG-1', category: 'REPARACIONES', description: 'Cargo ficticio', amount: 300000,
+      date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+    }]
   });
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.isSurplus, true);
   assert.equal(fin.refundToTenant, 200000);
-
-  const pendingRefund = { ...c, refund: { amount: 200000, status: 'PENDIENTE' as const } };
-  assert.equal(isCaseCompleted(pendingRefund), false);
-
-  const transferredRefund = { ...c, refund: { amount: 200000, status: 'TRANSFERIDA' as const } };
-  assert.equal(isCaseCompleted(transferredRefund), true);
+  assert.equal(isCaseCompleted({ ...c, refund: { amount: 200000, status: 'PENDIENTE' } }), false);
+  assert.equal(isCaseCompleted({ ...c, refund: { amount: 200000, status: 'TRANSFERIDA' } }), true);
 }
 
 // 2) Garantía exacta
 {
   const c = baseCase({
-    charges: [
-      {
-        id: 'CHG-2',
-        category: 'REPARACIONES',
-        description: 'Cargo ficticio',
-        amount: 500000,
-        date: '01/07/2026',
-        type: 'DAÑO_REPARACION',
-        notes: '',
-        documents: [],
-        photos: []
-      }
-    ]
+    charges: [{
+      id: 'CHG-2', category: 'REPARACIONES', description: 'Cargo ficticio', amount: 500000,
+      date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+    }]
   });
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.isExact, true);
@@ -120,19 +98,10 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 {
   const c = baseCase({
     plan: 'ESTANDAR',
-    charges: [
-      {
-        id: 'CHG-3',
-        category: 'REPARACIONES',
-        description: 'Cargo ficticio',
-        amount: 800000,
-        date: '01/07/2026',
-        type: 'DAÑO_REPARACION',
-        notes: '',
-        documents: [],
-        photos: []
-      }
-    ],
+    charges: [{
+      id: 'CHG-3', category: 'REPARACIONES', description: 'Cargo ficticio', amount: 800000,
+      date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+    }],
     receivableStatus: 'PENDIENTE'
   });
   const fin = calculateGuaranteeFinances(c, settings);
@@ -156,26 +125,12 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     plan: 'FULL',
     charges: [
       {
-        id: 'CHG-4',
-        category: 'REPARACIONES',
-        description: 'Daños ficticios',
-        amount: 800000,
-        date: '01/07/2026',
-        type: 'DAÑO_REPARACION',
-        notes: '',
-        documents: [],
-        photos: []
+        id: 'CHG-4', category: 'REPARACIONES', description: 'Daños ficticios', amount: 800000,
+        date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
       },
       {
-        id: 'CHG-5',
-        category: 'GASTOS_COMUNES',
-        description: 'Gastos comunes ficticios',
-        amount: 200000,
-        date: '01/07/2026',
-        type: 'GASTO_COMUN',
-        notes: '',
-        documents: [],
-        photos: []
+        id: 'CHG-5', category: 'GASTOS_COMUNES', description: 'Gastos comunes ficticios', amount: 200000,
+        date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
       }
     ]
   });
