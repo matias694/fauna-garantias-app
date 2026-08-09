@@ -9,7 +9,7 @@ import { ShieldCheck } from 'lucide-react';
  * Keeps coverage, owner advance and tenant debt visibly separated.
  */
 export const FullCoverageCaseBanner: React.FC = () => {
-  const { activeView, selectedCaseId, cases, settings } = useApp();
+  const { activeView, selectedCaseId, cases, receivables, settings } = useApp();
 
   if (activeView !== 'case-detail' || !selectedCaseId) return null;
 
@@ -19,9 +19,10 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   if (!fin.isInsufficient) return null;
 
+  const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
   const coverage = fin.fullCoverageApplied;
-  const ownerAdvance = guaranteeCase.ownerContribution || Math.max(0, fin.tenantDeficit - coverage);
-  const faunaAdvance = guaranteeCase.faunaFinancing || coverage;
+  const ownerAdvance = receivable ? receivable.ownerContributionToRecover : guaranteeCase.ownerContribution;
+  const faunaAdvance = receivable ? receivable.faunaFinancingToRecover : guaranteeCase.faunaFinancing;
   const isIssued = guaranteeCase.liquidationStatus === 'EMITIDA';
 
   return (
@@ -47,18 +48,18 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <span className="text-[10px] text-emerald-200 block">Daños cubiertos por Fauna</span>
           </div>
           <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Aporte propietario</span>
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Aporte propietario por recuperar</span>
             <strong className="text-lg font-black font-mono">{formatCLP(ownerAdvance)}</strong>
             <span className="text-[10px] text-emerald-200 block">Fuera de cobertura Full</span>
           </div>
           <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Financiamiento Fauna</span>
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Financiamiento Fauna por recuperar</span>
             <strong className="text-lg font-black font-mono">{formatCLP(faunaAdvance)}</strong>
-            <span className="text-[10px] text-emerald-200 block">A recuperar si paga arrendatario</span>
+            <span className="text-[10px] text-emerald-200 block">Cobertura financiada por Fauna</span>
           </div>
           <div className="bg-white/10 rounded-xl p-3 border border-white/10">
             <span className="text-[10px] uppercase font-bold text-emerald-200 block">Deuda arrendatario</span>
-            <strong className="text-lg font-black font-mono">{formatCLP(fin.tenantDeficit)}</strong>
+            <strong className="text-lg font-black font-mono">{formatCLP(receivable?.pendingBalance ?? fin.tenantDeficit)}</strong>
             <span className="text-[10px] text-emerald-200 block">La cobertura no extingue su deuda</span>
           </div>
         </div>
