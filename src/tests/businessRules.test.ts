@@ -139,6 +139,8 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(fin.isInsufficient, true);
   assert.equal(fin.tenantDeficit, 300000);
   assert.equal(isCaseCompleted(c), false);
+  assert.equal(isCaseCompleted({ ...c, receivableStatus: 'PAGADA' }), true);
+  assert.equal(isCaseCompleted({ ...c, receivableStatus: 'INCOBRABLE' }), true);
 
   const dist = calculatePaymentDistribution(300000, 100000, 150000);
   assert.equal(dist.ownerRecovery, 100000);
