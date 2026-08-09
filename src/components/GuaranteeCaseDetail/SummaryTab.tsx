@@ -28,6 +28,11 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const isOverdue = daysInProcess > settings.maxLiquidationDays;
   const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
   const shouldShowDeadlineAlert = !guaranteeCase.isCompleted && !guaranteeCase.isClosed && (isOverdue || isNearDeadline);
+  const liquidationLabel = guaranteeCase.liquidationStatus === 'EN_PREPARACION'
+    ? 'EN PREPARACIÓN'
+    : guaranteeCase.liquidationStatus === 'EMITIDA'
+      ? 'CONFIRMADA'
+      : guaranteeCase.liquidationStatus;
 
   const handleSaveNextManagement = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +96,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
             <div className="bg-slate-800 px-3 py-2 rounded-xl border border-slate-700">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Liquidación</span>
               <strong className={`text-xs ${guaranteeCase.liquidationStatus === 'EMITIDA' ? 'text-purple-300' : guaranteeCase.liquidationStatus === 'LISTA' ? 'text-emerald-300' : 'text-amber-300'}`}>
-                {guaranteeCase.liquidationStatus === 'EN_PREPARACION' ? 'EN PREPARACIÓN' : guaranteeCase.liquidationStatus}
+                {liquidationLabel}
               </strong>
             </div>
 
