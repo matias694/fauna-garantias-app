@@ -83,7 +83,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
               type="number"
               min="1"
               max={receivable.pendingBalance}
-              step="5000"
+              step="1"
               required
               value={paymentAmount}
               onChange={(e) => setPaymentAmount(Number(e.target.value))}
