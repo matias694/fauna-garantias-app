@@ -56,28 +56,36 @@ export interface OwnerLiquidationReconciliation {
   reconciliationBalance: number;
 }
 
+/**
+ * Los cargos se guardan positivos y los abonos como montos negativos.
+ * Cada abono reduce solamente su grupo económico (daños o servicios), evitando
+ * que un abono de servicios libere artificialmente cobertura para reparaciones o viceversa.
+ */
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
   _settings: SystemSettings
 ): FinancialCalculationResult {
   const guaranteeAmount = c.guaranteeAmount || 0;
 
-  let totalCharges = 0;
-  let damageCharges = 0;
-  let serviceCharges = 0;
+  let rawDamageCharges = 0;
+  let rawServiceCharges = 0;
 
   (c.charges || []).forEach(ch => {
-    const amt = ch.amount || 0;
-    totalCharges += amt;
+    const amt = Number(ch.amount) || 0;
     if (ch.type === 'DAÑO_REPARACION') {
-      damageCharges += amt;
+      rawDamageCharges += amt;
     } else {
-      serviceCharges += amt;
+      rawServiceCharges += amt;
     }
   });
 
+  // Un abono nunca transforma una categoría en un cargo negativo.
+  const damageCharges = Math.max(0, rawDamageCharges);
+  const serviceCharges = Math.max(0, rawServiceCharges);
+  const totalCharges = damageCharges + serviceCharges;
+
   const rawBalance = guaranteeAmount - totalCharges;
-  const guaranteeUsed = Math.min(guaranteeAmount, totalCharges);
+  const guaranteeUsed = Math.max(0, Math.min(guaranteeAmount, totalCharges));
 
   const isSurplus = rawBalance > 0;
   const isExact = rawBalance === 0;
@@ -115,12 +123,7 @@ export function calculateGuaranteeFinances(
     serviceCharges - guaranteeForServices
   );
 
-  // Campo agregado legacy. Sigue representando la diferencia económica total a cargo
-  // del propietario, pero ya no significa que todo ese monto bloquee la liquidación.
   const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
-
-  // Nombre interno legacy: faunaFinancingRequired. Operativamente representa la
-  // cobertura Full que Fauna aplica al daño restante.
   const faunaFinancingRequired = c.plan === 'FULL' ? fullCoverageApplied : 0;
 
   // La cobertura Full protege al propietario, pero no extingue la deuda del arrendatario.
@@ -178,14 +181,10 @@ export function calculateFundingReadiness(
     .filter(m => m.type === 'RECUPERACION_FAUNA')
     .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
-  // Cuando el arrendatario paga una parte que no corresponde a recuperar fondos ya
-  // adelantados por propietario/Fauna, ese saldo puede extinguir obligaciones de
-  // servicios que todavía seguían pendientes.
   const tenantUnallocatedPayments = (c.movements || [])
     .filter(m => m.type === 'SALDO_PAGO_ARRENDATARIO')
     .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
-  // Compatibilidad con casos legacy que podían guardar solo el saldo vigente.
   const ownerProvisionedTotal = ownerProvisionMovements > 0
     ? ownerProvisionMovements
     : Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
@@ -193,9 +192,6 @@ export function calculateFundingReadiness(
     ? fullCoverageExecutionMovements
     : Math.max(0, (c.faunaFinancing || 0) + faunaRecoveries);
 
-  // Los fondos del propietario se asignan primero a cualquier diferencia de reparación,
-  // porque esa es la condición que permite ejecutar los trabajos. Solo el remanente se
-  // considera pago/provisión de gastos comunes y servicios.
   const ownerRepairRequired = fin.ownerRepairFundingRequired;
   const ownerRepairFundedTotal = Math.min(ownerProvisionedTotal, ownerRepairRequired);
   const ownerRepairPendingProvision = Math.max(0, ownerRepairRequired - ownerRepairFundedTotal);
@@ -233,16 +229,10 @@ export function calculateFundingReadiness(
     fullCoverageRequired,
     fullCoverageExecutedTotal,
     fullCoveragePendingExecution,
-    // Solo las reparaciones sin provisión (y la cobertura Full no ejecutada) bloquean.
     readyToConfirm: ownerRepairPendingProvision === 0 && fullCoveragePendingExecution === 0
   };
 }
 
-/**
- * Reconcilia la liquidación que ve el propietario.
- * La liquidación es histórica: una recuperación posterior del arrendatario no debe
- * borrar los fondos que el propietario provisionó originalmente para cuadrar el caso.
- */
 export function calculateOwnerLiquidationReconciliation(
   c: GuaranteeCase,
   settings: SystemSettings
@@ -251,19 +241,15 @@ export function calculateOwnerLiquidationReconciliation(
   const readiness = calculateFundingReadiness(c, settings);
 
   const ownerContributionFundedTotal = readiness.ownerProvisionedTotal;
-
   const ownerContributionApplied = Math.min(
     fin.ownerContributionRequired,
     ownerContributionFundedTotal
   );
-
   const ownerContributionPending = Math.max(
     0,
     fin.ownerContributionRequired - ownerContributionApplied
   );
 
-  // La devolución al arrendatario también forma parte de la cuadratura del dinero
-  // que estaba en garantía. Si todo lo requerido fue provisionado, el balance debe ser $0.
   const reconciliationBalance =
     fin.guaranteeAmount
     - fin.totalCharges
