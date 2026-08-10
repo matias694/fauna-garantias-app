@@ -38,10 +38,16 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     .replace('Liquidación de garantía emitida formalmente', 'Liquidación de garantía confirmada como definitiva')
     .replace('cambió Liquidación a EMITIDA', 'cambió Liquidación a CONFIRMADA');
 
-  // Los comentarios de seguimiento se muestran con su contenido real. Se oculta el
-  // audit genérico "Seguimiento Registrado" para no duplicar el mismo evento.
+  // Los comentarios de seguimiento se muestran con su contenido real. También se oculta
+  // el audit técnico genérico de updateCharge: la pantalla de cargos registra un evento
+  // descriptivo con el cambio real (monto, estado, proveedor, fecha, etc.).
   const auditEvents: HistoryEvent[] = auditLogs
-    .filter(log => log.caseId === guaranteeCase.id && log.action !== 'Seguimiento Registrado')
+    .filter(log => {
+      if (log.caseId !== guaranteeCase.id) return false;
+      if (log.action === 'Seguimiento Registrado') return false;
+      if (log.action === 'Cargo Actualizado' && /^Cargo CHG-.* actualizado$/.test(log.detail)) return false;
+      return true;
+    })
     .map(log => ({
       id: log.id,
       timestamp: log.timestamp,
