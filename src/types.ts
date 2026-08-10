@@ -95,6 +95,14 @@ export type ChargeCategory =
 
 export type ChargeType = 'DAÑO_REPARACION' | 'SERVICIO_CONSUMO' | 'GASTO_COMUN' | 'OTRO';
 
+export interface RepairTracking {
+  provider: string;
+  responsible: string;
+  status: RepairStatus;
+  commitmentDate: string;
+  notes?: string;
+}
+
 export interface Charge {
   id: string;
   category: ChargeCategory;
@@ -104,6 +112,7 @@ export interface Charge {
   type: ChargeType;
   notes: string;
   repairId?: string;
+  repairTracking?: RepairTracking;
   documents: string[];
   photos: string[];
 }

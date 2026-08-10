@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { GuaranteeCase, ChargeCategory, ChargeType, Charge } from '../../types';
+import { GuaranteeCase, ChargeCategory, ChargeType, Charge, RepairStatus } from '../../types';
 import { formatCLP, formatDate } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
-import { DollarSign, Plus, Minus, Trash2, Edit2, Paperclip, Lock } from 'lucide-react';
+import { DollarSign, Plus, Minus, Trash2, Edit2, Paperclip, Lock, Wrench } from 'lucide-react';
 
 interface ChargesTabProps {
   guaranteeCase: GuaranteeCase;
@@ -11,19 +11,33 @@ interface ChargesTabProps {
 
 type MovementKind = 'CARGO' | 'ABONO';
 
+const visibleConcepts: ChargeCategory[] = [
+  'REPARACIONES',
+  'GASTOS_COMUNES',
+  'AGUA',
+  'ELECTRICIDAD',
+  'GAS',
+  'OTROS_SERVICIOS',
+  'OTRO'
+];
+
+const normalizeCategory = (category: ChargeCategory): ChargeCategory => {
+  if (['PINTURA', 'LIMPIEZA', 'DAÑOS'].includes(category)) return 'REPARACIONES';
+  return category;
+};
+
 const inferChargeType = (category: ChargeCategory): ChargeType => {
-  if (['REPARACIONES', 'PINTURA', 'LIMPIEZA', 'DAÑOS'].includes(category)) return 'DAÑO_REPARACION';
-  if (category === 'GASTOS_COMUNES') return 'GASTO_COMUN';
-  if (['AGUA', 'ELECTRICIDAD', 'GAS', 'OTROS_SERVICIOS'].includes(category)) return 'SERVICIO_CONSUMO';
+  const normalized = normalizeCategory(category);
+  if (normalized === 'REPARACIONES') return 'DAÑO_REPARACION';
+  if (normalized === 'GASTOS_COMUNES') return 'GASTO_COMUN';
+  if (['AGUA', 'ELECTRICIDAD', 'GAS', 'OTROS_SERVICIOS'].includes(normalized)) return 'SERVICIO_CONSUMO';
   return 'OTRO';
 };
 
 const conceptLabel = (category: ChargeCategory) => {
-  const labels: Record<ChargeCategory, string> = {
+  const normalized = normalizeCategory(category);
+  const labels: Partial<Record<ChargeCategory, string>> = {
     REPARACIONES: 'Daño / reparación',
-    PINTURA: 'Pintura',
-    LIMPIEZA: 'Limpieza',
-    DAÑOS: 'Daños',
     GASTOS_COMUNES: 'Gastos comunes',
     AGUA: 'Agua',
     ELECTRICIDAD: 'Electricidad',
@@ -31,11 +45,18 @@ const conceptLabel = (category: ChargeCategory) => {
     OTROS_SERVICIOS: 'Otros servicios',
     OTRO: 'Otro'
   };
-  return labels[category];
+  return labels[normalized] || 'Daño / reparación';
+};
+
+const trackingStatusLabel = (status?: RepairStatus) => {
+  if (status === 'TERMINADA') return 'Terminada';
+  if (status === 'EN_EJECUCION') return 'En ejecución';
+  if (status === 'CANCELADA') return 'Cancelada';
+  return 'Pendiente';
 };
 
 export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
-  const { addCharge, updateCharge, deleteCharge, settings } = useApp();
+  const { addCharge, updateCharge, deleteCharge, changePreparationStatus, settings } = useApp();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCharge, setEditingCharge] = useState<Charge | null>(null);
@@ -45,18 +66,22 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   const [amount, setAmount] = useState<number>(0);
   const [date, setDate] = useState(guaranteeCase.receptionDate);
   const [notes, setNotes] = useState('');
-  const [selectedRepairId, setSelectedRepairId] = useState<string>('');
+
+  const [repairProvider, setRepairProvider] = useState('');
+  const [repairResponsible, setRepairResponsible] = useState(guaranteeCase.responsible || settings.responsiblesList[0] || '');
+  const [repairStatus, setRepairStatus] = useState<RepairStatus>('PENDIENTE');
+  const [repairCommitmentDate, setRepairCommitmentDate] = useState('');
 
   const todayStr = new Date().toISOString().split('T')[0];
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
 
-  const cargoTotal = guaranteeCase.charges
-    .filter(ch => ch.amount > 0)
-    .reduce((sum, ch) => sum + ch.amount, 0);
-  const creditTotal = guaranteeCase.charges
-    .filter(ch => ch.amount < 0)
-    .reduce((sum, ch) => sum + Math.abs(ch.amount), 0);
+  const resetTracking = () => {
+    setRepairProvider('');
+    setRepairResponsible(guaranteeCase.responsible || settings.responsiblesList[0] || '');
+    setRepairStatus('PENDIENTE');
+    setRepairCommitmentDate('');
+  };
 
   const resetForm = (kind: MovementKind) => {
     setEditingCharge(null);
@@ -66,7 +91,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     setAmount(100000);
     setDate(formatDate(todayStr));
     setNotes('');
-    setSelectedRepairId('');
+    resetTracking();
   };
 
   const handleOpenAdd = (kind: MovementKind) => {
@@ -79,27 +104,34 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     if (isConfirmed) return;
     setEditingCharge(ch);
     setMovementKind(ch.amount < 0 ? 'ABONO' : 'CARGO');
-    setCategory(ch.category);
+    setCategory(normalizeCategory(ch.category));
     setDescription(ch.description);
     setAmount(Math.abs(ch.amount));
     setDate(ch.date);
     setNotes(ch.notes);
-    setSelectedRepairId(ch.repairId || '');
+    setRepairProvider(ch.repairTracking?.provider || '');
+    setRepairResponsible(ch.repairTracking?.responsible || guaranteeCase.responsible || settings.responsiblesList[0] || '');
+    setRepairStatus(ch.repairTracking?.status || 'PENDIENTE');
+    setRepairCommitmentDate(ch.repairTracking?.commitmentDate || '');
     setIsModalOpen(true);
   };
 
-  const handleRepairSelect = (repairId: string) => {
-    setSelectedRepairId(repairId);
-    if (!repairId) return;
-    const r = guaranteeCase.repairs.find(x => x.id === repairId);
-    if (!r) return;
+  const syncPreparationStatus = (nextCharges: Charge[]) => {
+    const repairCharges = nextCharges.filter(ch => ch.amount > 0 && ch.type === 'DAÑO_REPARACION');
+    if (repairCharges.length === 0) {
+      if (guaranteeCase.preparationStatus === 'REPARANDO') {
+        changePreparationStatus(guaranteeCase.id, 'LISTA');
+      }
+      return;
+    }
 
-    setMovementKind('CARGO');
-    setDescription(`Reparación: ${r.description}`);
-    setAmount(r.finalCost || r.estimatedCost);
-    if (r.category === 'PINTURA') setCategory('PINTURA');
-    else if (r.category === 'LIMPIEZA') setCategory('LIMPIEZA');
-    else setCategory('REPARACIONES');
+    const allFinished = repairCharges.every(ch =>
+      ch.repairTracking?.status === 'TERMINADA' || ch.repairTracking?.status === 'CANCELADA'
+    );
+    const nextStatus = allFinished ? 'LISTA' : 'REPARANDO';
+    if (guaranteeCase.preparationStatus !== nextStatus) {
+      changePreparationStatus(guaranteeCase.id, nextStatus);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -116,31 +148,56 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
       return;
     }
 
+    const normalizedCategory = normalizeCategory(category);
+
+    if (movementKind === 'ABONO') {
+      const availableForCredit = guaranteeCase.charges
+        .filter(ch => ch.id !== editingCharge?.id && normalizeCategory(ch.category) === normalizedCategory)
+        .reduce((sum, ch) => sum + ch.amount, 0);
+
+      if (availableForCredit <= 0) {
+        alert(`No existe un cargo pendiente en ${conceptLabel(normalizedCategory)} al cual aplicar este abono.`);
+        return;
+      }
+
+      if (amount > availableForCredit) {
+        alert(`El abono no puede superar el saldo del concepto (${formatCLP(availableForCredit)}).`);
+        return;
+      }
+    }
+
     const signedAmount = movementKind === 'ABONO' ? -Math.abs(amount) : Math.abs(amount);
-    const type = inferChargeType(category);
+    const type = inferChargeType(normalizedCategory);
+    const isRepairCharge = movementKind === 'CARGO' && type === 'DAÑO_REPARACION';
+    const repairTracking = isRepairCharge
+      ? {
+          provider: repairProvider,
+          responsible: repairResponsible,
+          status: repairStatus,
+          commitmentDate: repairCommitmentDate
+        }
+      : undefined;
+
+    const nextChargeData: Omit<Charge, 'id'> = {
+      category: normalizedCategory,
+      description,
+      amount: signedAmount,
+      date,
+      type,
+      notes,
+      repairId: editingCharge?.repairId,
+      repairTracking,
+      documents: editingCharge?.documents || [],
+      photos: editingCharge?.photos || []
+    };
 
     if (editingCharge) {
-      updateCharge(guaranteeCase.id, editingCharge.id, {
-        category,
-        description,
-        amount: signedAmount,
-        date,
-        type,
-        notes,
-        repairId: selectedRepairId || undefined
-      });
+      updateCharge(guaranteeCase.id, editingCharge.id, nextChargeData);
+      const nextCharges = guaranteeCase.charges.map(ch => ch.id === editingCharge.id ? { ...ch, ...nextChargeData } : ch);
+      syncPreparationStatus(nextCharges);
     } else {
-      addCharge(guaranteeCase.id, {
-        category,
-        description,
-        amount: signedAmount,
-        date,
-        type,
-        notes,
-        repairId: selectedRepairId || undefined,
-        documents: [],
-        photos: []
-      });
+      addCharge(guaranteeCase.id, nextChargeData);
+      syncPreparationStatus([...guaranteeCase.charges, { id: 'PREVIEW', ...nextChargeData }]);
     }
 
     setIsModalOpen(false);
@@ -149,6 +206,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   const handleDeleteCharge = (chargeId: string) => {
     if (isConfirmed) return;
     deleteCharge(guaranteeCase.id, chargeId);
+    syncPreparationStatus(guaranteeCase.charges.filter(ch => ch.id !== chargeId));
   };
 
   return (
@@ -157,13 +215,11 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
         <div>
           <div className="flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-emerald-600" />
-            <h3 className="font-bold text-slate-800 text-base">Cargos y abonos de la liquidación</h3>
+            <h3 className="font-bold text-slate-800 text-base">Cargos y abonos</h3>
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-1">
-            <span>Cargos <strong className="text-rose-700 font-mono">{formatCLP(cargoTotal)}</strong></span>
-            <span>Abonos <strong className="text-emerald-700 font-mono">{formatCLP(creditTotal)}</strong></span>
-            <span>Neto <strong className="text-slate-900 font-mono">{formatCLP(fin.totalCharges)}</strong></span>
-          </div>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Los daños y reparaciones incorporan su seguimiento operativo en el mismo registro.
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -216,7 +272,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                 <tr>
                   <th className="p-3">Movimiento</th>
                   <th className="p-3">Concepto</th>
-                  <th className="p-3">Descripción</th>
+                  <th className="p-3">Descripción / seguimiento</th>
                   <th className="p-3">Fecha</th>
                   <th className="p-3 text-right">Monto</th>
                   <th className="p-3">Observaciones</th>
@@ -226,8 +282,10 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
               <tbody className="divide-y divide-slate-200 font-medium">
                 {guaranteeCase.charges.map(ch => {
                   const isCredit = ch.amount < 0;
+                  const isRepairCharge = !isCredit && ch.type === 'DAÑO_REPARACION';
+                  const tracking = ch.repairTracking;
                   return (
-                    <tr key={ch.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={ch.id} className="hover:bg-slate-50 transition-colors align-top">
                       <td className="p-3 whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                           isCredit
@@ -238,10 +296,25 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                         </span>
                       </td>
                       <td className="p-3 whitespace-nowrap text-slate-700 font-semibold">{conceptLabel(ch.category)}</td>
-                      <td className="p-3">
+                      <td className="p-3 min-w-[240px]">
                         <p className="font-bold text-slate-800 text-xs">{ch.description}</p>
-                        {ch.repairId && (
-                          <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Vinculado a reparación</span>
+                        {isRepairCharge && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border font-bold ${
+                              tracking?.status === 'TERMINADA'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : tracking?.status === 'EN_EJECUCION'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : tracking?.status === 'CANCELADA'
+                                ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}>
+                              <Wrench className="w-3 h-3" /> {trackingStatusLabel(tracking?.status)}
+                            </span>
+                            {tracking?.provider && <span className="text-slate-500">Proveedor: {tracking.provider}</span>}
+                            {tracking?.commitmentDate && <span className="text-slate-500">· Compromiso: {formatDate(tracking.commitmentDate)}</span>}
+                            {!tracking && <span className="text-amber-700">Edita el cargo para completar el seguimiento.</span>}
+                          </div>
                         )}
                       </td>
                       <td className="p-3 whitespace-nowrap text-slate-600 font-mono text-[11px]">{formatDate(ch.date)}</td>
@@ -263,7 +336,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                           </span>
                         ) : (
                           <>
-                            <button onClick={() => handleOpenEdit(ch)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer" title="Editar">
+                            <button onClick={() => handleOpenEdit(ch)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer" title={isRepairCharge ? 'Editar cargo y seguimiento' : 'Editar'}>
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => handleDeleteCharge(ch.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer" title="Eliminar">
@@ -276,14 +349,21 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                   );
                 })}
               </tbody>
+              <tfoot className="bg-slate-50 border-t border-slate-200">
+                <tr>
+                  <td colSpan={4} className="p-3 text-right text-xs font-bold text-slate-600">Neto aplicado a la liquidación</td>
+                  <td className="p-3 text-right font-mono font-black text-slate-900 whitespace-nowrap">{formatCLP(fin.totalCharges)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
       </div>
 
       {isModalOpen && !isConfirmed && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4 border border-slate-100">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4 border border-slate-100 my-4">
             <h3 className="font-bold text-base text-slate-800 border-b border-slate-100 pb-2">
               {editingCharge ? 'Editar movimiento' : movementKind === 'ABONO' ? 'Registrar abono' : 'Registrar cargo'}
             </h3>
@@ -299,23 +379,11 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                   >Cargo</button>
                   <button
                     type="button"
-                    onClick={() => { setMovementKind('ABONO'); setSelectedRepairId(''); }}
+                    onClick={() => setMovementKind('ABONO')}
                     className={`p-2 rounded-lg border font-bold ${movementKind === 'ABONO' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-white border-slate-200 text-slate-600'}`}
                   >Abono</button>
                 </div>
               </div>
-
-              {movementKind === 'CARGO' && guaranteeCase.repairs.length > 0 && (
-                <div className="bg-emerald-50/60 border border-emerald-200 p-2.5 rounded-lg">
-                  <label className="block font-bold text-emerald-900 mb-1">Vincular a una reparación existente</label>
-                  <select value={selectedRepairId} onChange={(e) => handleRepairSelect(e.target.value)} className="w-full bg-white border border-emerald-300 rounded-md p-1.5 text-xs text-slate-800 font-medium">
-                    <option value="">No vincular</option>
-                    {guaranteeCase.repairs.map(r => (
-                      <option key={r.id} value={r.id}>{r.description} ({formatCLP(r.finalCost || r.estimatedCost)})</option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Concepto *</label>
@@ -324,9 +392,8 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                   onChange={(e) => setCategory(e.target.value as ChargeCategory)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
                 >
-                  {settings.chargeCategories.map(cat => <option key={cat} value={cat}>{conceptLabel(cat)}</option>)}
+                  {visibleConcepts.map(cat => <option key={cat} value={cat}>{conceptLabel(cat)}</option>)}
                 </select>
-                <span className="text-[10px] text-slate-400 block mt-1">El sistema clasifica automáticamente el concepto para los cálculos de cobertura.</span>
               </div>
 
               <div>
@@ -360,6 +427,45 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                   <input type="text" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs" />
                 </div>
               </div>
+
+              {movementKind === 'CARGO' && inferChargeType(category) === 'DAÑO_REPARACION' && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="w-4 h-4 text-emerald-600" />
+                    <div>
+                      <strong className="text-xs text-slate-800 block">Seguimiento de la reparación</strong>
+                      <span className="text-[10px] text-slate-500">El costo es el mismo cargo de arriba; aquí solo se controla la ejecución.</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Proveedor / maestro</label>
+                      <input value={repairProvider} onChange={(e) => setRepairProvider(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Responsable</label>
+                      <select value={repairResponsible} onChange={(e) => setRepairResponsible(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs">
+                        <option value="">Sin responsable</option>
+                        {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Estado</label>
+                      <select value={repairStatus} onChange={(e) => setRepairStatus(e.target.value as RepairStatus)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs">
+                        <option value="PENDIENTE">Pendiente</option>
+                        <option value="EN_EJECUCION">En ejecución</option>
+                        <option value="TERMINADA">Terminada</option>
+                        <option value="CANCELADA">Cancelada</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Fecha compromiso</label>
+                      <input type="text" placeholder="DD/MM/AAAA" value={repairCommitmentDate} onChange={(e) => setRepairCommitmentDate(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Observaciones</label>
