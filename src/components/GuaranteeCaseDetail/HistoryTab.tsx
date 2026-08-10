@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { GuaranteeCase, AuditLog, RequirementStatus } from '../../types';
+import { GuaranteeCase, AuditLog, RequirementStatus, ChargeCategory } from '../../types';
+import { formatCLP } from '../../utils/formatters';
 import { History } from 'lucide-react';
 
 interface HistoryTabProps {
@@ -46,6 +47,26 @@ const blockedByLabel = (blockedBy: string) => {
   return blockedBy.replace(/_/g, ' ').toLowerCase();
 };
 
+const normalizeCategory = (category: ChargeCategory): ChargeCategory => {
+  if (['PINTURA', 'LIMPIEZA', 'DAÑOS'].includes(category)) return 'REPARACIONES';
+  return category;
+};
+
+const conceptLabel = (category?: ChargeCategory) => {
+  if (!category) return 'Movimiento de liquidación';
+  const normalized = normalizeCategory(category);
+  const labels: Partial<Record<ChargeCategory, string>> = {
+    REPARACIONES: 'Daño / reparación',
+    GASTOS_COMUNES: 'Gastos comunes',
+    AGUA: 'Agua',
+    ELECTRICIDAD: 'Electricidad',
+    GAS: 'Gas',
+    OTROS_SERVICIOS: 'Otros servicios',
+    OTRO: 'Otro'
+  };
+  return labels[normalized] || normalized.replace(/_/g, ' ').toLowerCase();
+};
+
 const formatCLPAmountsInText = (value: string) => value.replace(
   /\$(-?)(\d+(?:\.\d{3})*)/g,
   (_match, sign: string, rawAmount: string) => {
@@ -69,13 +90,18 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     return compatible?.name || 'Requisito de liquidación';
   };
 
+  const findChargeByDescription = (description: string) => {
+    const matches = guaranteeCase.charges.filter(ch => ch.description.trim() === description.trim());
+    return matches[matches.length - 1];
+  };
+
   const normalizeAuditLog = (log: AuditLog): HistoryEvent | null => {
     // Persistencia técnica y estados derivados no deben ocupar espacio en la bitácora visible.
     if (log.action === 'Actualización de Caso') return null;
     if (log.action === 'Seguimiento Registrado') return null;
     if (log.action === 'Preparación Actualizada') return null;
-    if (log.action === 'Cargo Actualizado' && /^Cargo CHG-.* actualizado$/.test(log.detail)) return null;
-    if (log.action === 'Reparación Actualizada' && /^Reparación REP-.* actualizada$/.test(log.detail)) return null;
+    if (log.action === 'Cargo Actualizado' && /^Cargo\s+.+\s+actualizado$/i.test(log.detail)) return null;
+    if (log.action === 'Reparación Actualizada' && /^Reparación\s+.+\s+actualizada$/i.test(log.detail)) return null;
 
     let action = log.action;
     let detail = log.detail;
@@ -107,12 +133,46 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
       }
     }
 
-    if (action === 'Cargo Eliminado' && /^Cargo CHG-.* eliminado$/.test(detail)) {
-      action = 'Cargo eliminado';
-      detail = 'Se eliminó un cargo de la liquidación.';
+    if (action === 'Cargo Creado') {
+      const match = detail.match(/^Cargo\s+[“"](.+?)[”"]\s+por\s+\$(-?\d+)\s+añadido$/i);
+      if (match) {
+        const [, description, rawAmount] = match;
+        const amount = Number(rawAmount);
+        const charge = findChargeByDescription(description);
+        const isCredit = amount < 0 || Boolean(charge && charge.amount < 0);
+        action = isCredit ? 'Abono agregado' : 'Cargo agregado';
+        detail = `${conceptLabel(charge?.category)} · “${description}” · ${isCredit ? '+' : '-'}${formatCLP(Math.abs(amount))}`;
+      }
     }
 
-    if (action === 'Reparación Eliminada' && /^Reparación REP-.* eliminada$/.test(detail)) {
+    if (action === 'Estado de reparación actualizado') {
+      const match = detail.match(/^[“"](.+?)[”"]\s+cambió de\s+(.+?)\s+a\s+(.+?)\.$/i);
+      if (match) {
+        const [, description, fromStatus, toStatus] = match;
+        const charge = findChargeByDescription(description);
+        const chargeContext = charge
+          ? `${conceptLabel(charge.category)} · “${description}” · ${formatCLP(Math.abs(charge.amount))}`
+          : `Reparación · “${description}”`;
+        detail = `${chargeContext}\nEstado: ${fromStatus} → ${toStatus}.`;
+      }
+    }
+
+    if (action === 'Documento Adjuntado') {
+      const match = detail.match(/^Archivo\s+(.+?)\s+adjuntado$/i);
+      if (match) {
+        const fileName = match[1];
+        const attachment = guaranteeCase.attachments.find(att => att.name === fileName);
+        action = 'Documento adjuntado';
+        detail = `${attachment?.category || 'Documento'} · ${fileName}`;
+      }
+    }
+
+    if (action === 'Cargo Eliminado' && /^Cargo\s+.+\s+eliminado$/i.test(detail)) {
+      action = 'Cargo eliminado';
+      detail = 'Se eliminó un movimiento de la liquidación.';
+    }
+
+    if (action === 'Reparación Eliminada' && /^Reparación\s+.+\s+eliminada$/i.test(detail)) {
       action = 'Reparación eliminada';
       detail = 'Se eliminó una reparación del caso.';
     }
@@ -138,24 +198,30 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     .map(normalizeAuditLog)
     .filter((event): event is HistoryEvent => Boolean(event));
 
-  const followUpEvents: HistoryEvent[] = (guaranteeCase.followUps || []).map(item => ({
-    id: `HIST-${item.id}`,
-    timestamp: item.createdAt,
-    user: item.userName || item.user,
-    userEmail: item.userEmail,
-    action: item.comment.startsWith('Próxima gestión actualizada desde Resumen')
-      ? 'Próxima gestión actualizada'
-      : `Seguimiento · ${item.area === 'Garantia' ? 'Garantía' : item.area === 'Reparacion' ? 'Reparación' : 'General'}`,
-    detail: formatCLPAmountsInText(item.comment),
-    sortValue: parseChileTimestamp(item.createdAt)
-  }));
+  const followUpEvents: HistoryEvent[] = (guaranteeCase.followUps || []).map(item => {
+    const isNextManagementUpdate = item.comment.startsWith('Próxima gestión actualizada desde Resumen');
+    const cleanedComment = isNextManagementUpdate
+      ? item.comment.replace(/^Próxima gestión actualizada desde Resumen:\s*/i, '').trim()
+      : item.comment;
+
+    return {
+      id: `HIST-${item.id}`,
+      timestamp: item.createdAt,
+      user: item.userName || item.user,
+      userEmail: item.userEmail,
+      action: isNextManagementUpdate
+        ? 'Próxima gestión actualizada'
+        : `Seguimiento · ${item.area === 'Garantia' ? 'Garantía' : item.area === 'Reparacion' ? 'Reparación' : 'General'}`,
+      detail: formatCLPAmountsInText(cleanedComment),
+      sortValue: parseChileTimestamp(item.createdAt)
+    };
+  });
 
   const sortedEvents = [...auditEvents, ...followUpEvents].sort((a, b) => b.sortValue - a.sortValue);
 
   const events = sortedEvents.filter((event, index, all) => {
-    // La creación de un cargo por reparación ya genera un evento descriptivo específico.
-    // Se oculta el "Cargo Creado" genérico ocurrido en el mismo instante.
-    if (event.action === 'Cargo Creado') {
+    // Una reparación recién incorporada ya contiene monto y contexto; se oculta el cargo genérico paralelo.
+    if (event.action === 'Cargo agregado') {
       const detailedRepairEvent = all.some(candidate =>
         candidate.id !== event.id &&
         candidate.action === 'Reparación incorporada' &&
