@@ -1,5 +1,13 @@
 export type UserRole = 'ADMINISTRADOR' | 'ADMINISTRACION' | 'OPERACIONES';
 
+export interface SystemUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  active: boolean;
+}
+
 export type PreparationStatus = 'PENDIENTE' | 'REPARANDO' | 'LISTA';
 
 export type LiquidationStatus = 'EN_PREPARACION' | 'LISTA' | 'EMITIDA';
@@ -21,10 +29,15 @@ export interface FollowUpComment {
   comment: string;
   area: FollowUpArea;
   user: string;
+  userId?: string;
+  userName?: string;
+  userEmail?: string;
+  userRole?: UserRole;
   createdAt: string;
   nextManagement?: string;
   nextManagementDate?: string;
   nextManagementResponsible?: string;
+  nextManagementResponsibleUserId?: string;
 }
 
 export type RefundStatus = 'PENDIENTE' | 'TRANSFERIDA';
@@ -38,6 +51,7 @@ export interface TenantRefund {
   destinationAccount?: string;
   notes?: string;
   user?: string;
+  userId?: string;
 }
 
 export type BlockedByReason =
@@ -68,6 +82,7 @@ export interface ExitRepair {
   description: string;
   category: RepairCategory;
   responsible: string;
+  responsibleUserId?: string;
   provider: string;
   status: RepairStatus;
   detectionDate: string;
@@ -98,6 +113,7 @@ export type ChargeType = 'DAÑO_REPARACION' | 'SERVICIO_CONSUMO' | 'GASTO_COMUN'
 export interface RepairTracking {
   provider: string;
   responsible: string;
+  responsibleUserId?: string;
   status: RepairStatus;
   commitmentDate: string;
   notes?: string;
@@ -139,6 +155,7 @@ export interface FinancialMovement {
   description: string;
   amount: number;
   user: string;
+  userId?: string;
   reference: string;
   observation: string;
 }
@@ -181,6 +198,7 @@ export interface PaymentAllocation {
   tenantRemainingDebt: number;
   notes: string;
   user: string;
+  userId?: string;
 }
 
 export interface CaseAttachment {
@@ -214,6 +232,7 @@ export interface GuaranteeCase {
   deadlineDate: string;
   alertDate: string;
   responsible: string;
+  responsibleUserId?: string;
   initialNotes: string;
 
   preparationStatus: PreparationStatus;
@@ -228,6 +247,7 @@ export interface GuaranteeCase {
   nextManagement: string;
   nextManagementDate: string;
   nextManagementResponsible: string;
+  nextManagementResponsibleUserId?: string;
 
   followUps: FollowUpComment[];
   refund?: TenantRefund;
@@ -247,6 +267,7 @@ export interface GuaranteeCase {
   isClosed?: boolean;
   closedAt?: string;
   closedBy?: string;
+  closedByUserId?: string;
 }
 
 export interface AuditLog {
@@ -254,6 +275,10 @@ export interface AuditLog {
   caseId: string;
   timestamp: string;
   user: string;
+  actorUserId?: string;
+  actorName?: string;
+  actorEmail?: string;
+  actorRole?: UserRole;
   action: string;
   detail: string;
 }
@@ -272,4 +297,5 @@ export interface SystemSettings {
   chargeCategories: ChargeCategory[];
   repairCategories: RepairCategory[];
   responsiblesList: string[];
+  users?: SystemUser[];
 }
