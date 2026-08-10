@@ -1,100 +1,28 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { GuaranteeCase } from '../types';
 import { formatCLP, calculateDaysDifference } from '../utils/formatters';
+import { calculateFundingReadiness } from '../utils/calculations';
 import {
-  Clock,
   CheckCircle2,
   Wrench,
   DollarSign,
   AlertTriangle,
   Building2,
-  BarChart3,
   ArrowUpRight,
   UserCheck,
   ShieldAlert,
-  Calendar,
-  Layers
+  Clock3,
+  FileCheck2
 } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
-  const { cases, receivables, setSelectedCaseId, setActiveView } = useApp();
+  const { cases, receivables, settings, setSelectedCaseId, setActiveView } = useApp();
 
   const openCases = cases.filter(c => !c.isClosed);
   const activeCases = openCases.filter(c => !c.isCompleted);
   const completedPendingClose = openCases.filter(c => c.isCompleted);
 
-  // 1. Top KPI Metrics (Max 4)
-  const casosAbiertos = openCases.length;
-
-  const casosVencidos = activeCases.filter(c => calculateDaysDifference(c.receptionDate) > 60).length;
-  const casosProximosVencer = activeCases.filter(c => {
-    const days = calculateDaysDifference(c.receptionDate);
-    return days >= 45 && days <= 60;
-  }).length;
-  const porVencer = casosVencidos + casosProximosVencer;
-
-  const enReparacion = activeCases.filter(c => c.preparationStatus === 'REPARANDO').length;
-
-  const totalPendienteCobrar = receivables.reduce((acc, r) => acc + r.pendingBalance, 0);
-  const financiamientoFaunaVigente = activeCases.reduce((acc, c) => acc + (c.faunaFinancing || 0), 0);
-  const pendienteFinanciero = totalPendienteCobrar + financiamientoFaunaVigente;
-
-  // 2. Preparation & Liquidation Counters
-  const pendientesPreparacion = activeCases.filter(c => c.preparationStatus === 'PENDIENTE').length;
-  const preparadasListas = activeCases.filter(c => c.preparationStatus === 'LISTA').length;
-
-  const enPreparacionLiquidation = activeCases.filter(c => c.liquidationStatus === 'EN_PREPARACION').length;
-  const listasParaLiquidar = activeCases.filter(c => c.liquidationStatus === 'LISTA').length;
-  const emitidasLiquidation = activeCases.filter(c => c.liquidationStatus === 'EMITIDA').length;
-
-  // Faltantes de requisitos más frecuentes (Requisitos en estado PENDIENTE)
-  const faltantesCounts = {
-    presupuesto: 0,
-    gastosComunes: 0,
-    agua: 0,
-    electricidad: 0,
-    gas: 0
-  };
-
-  activeCases.forEach(c => {
-    if (c.liquidationStatus === 'EN_PREPARACION') {
-      c.requirements.forEach(req => {
-        if (req.status === 'PENDIENTE') {
-          const lower = req.name.toLowerCase();
-          if (lower.includes('presupuesto') || lower.includes('reparaci')) faltantesCounts.presupuesto++;
-          else if (lower.includes('gastos comunes') || lower.includes('ggcc')) faltantesCounts.gastosComunes++;
-          else if (lower.includes('agua')) faltantesCounts.agua++;
-          else if (lower.includes('electricidad') || lower.includes('luz')) faltantesCounts.electricidad++;
-          else if (lower.includes('gas')) faltantesCounts.gas++;
-        }
-      });
-    }
-  });
-
-  // 3. Estado Financiero Interno
-  const aportesPropietariosPendientes = activeCases.reduce((acc, c) => acc + (c.ownerContribution || 0), 0);
-
-  // Recuperado por Fauna Este Mes
-  let recuperadoFaunaEsteMes = 0;
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-
-  cases.forEach(c => {
-    c.movements.forEach(m => {
-      if (m.type === 'RECUPERACION_FAUNA') {
-        const parts = m.date.split('/');
-        if (parts.length === 3) {
-          const mMonth = parseInt(parts[1], 10) - 1;
-          const mYear = parseInt(parts[2], 10);
-          if (mMonth === currentMonth && mYear === currentYear) {
-            recuperadoFaunaEsteMes += m.amount;
-          }
-        }
-      }
-    });
-  });
-
-  // Helper date parsing (DD/MM/YYYY or YYYY-MM-DD)
   const parseDateStr = (dateStr?: string): Date | null => {
     if (!dateStr) return null;
     if (dateStr.includes('/')) {
@@ -104,7 +32,7 @@ export const Dashboard: React.FC = () => {
       }
     }
     const parsed = new Date(dateStr);
-    return isNaN(parsed.getTime()) ? null : parsed;
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
 
   const isOverdue = (dateStr?: string) => {
@@ -118,8 +46,7 @@ export const Dashboard: React.FC = () => {
   const isTodayDate = (dateStr?: string) => {
     const d = parseDateStr(dateStr);
     if (!d) return false;
-    const today = new Date();
-    return d.toDateString() === today.toDateString();
+    return d.toDateString() === new Date().toDateString();
   };
 
   const formatShortDateStr = (dateStr?: string) => {
@@ -135,22 +62,91 @@ export const Dashboard: React.FC = () => {
     return dateStr;
   };
 
-  // 4. Prioritization for Cases Needing Attention
-  // 0. Casos completados pendientes de cierre final
-  // 1. Próximas gestiones vencidas
-  // 2. Casos próximos al plazo máximo (>45d or >60d)
-  // 3. Reparaciones atrasadas
-  // 4. Casos bloqueados
-  // 5. Casos abiertos sin próxima gestión
-  const getAttentionCategory = (c: typeof openCases[0]) => {
+  const repairCharges = (c: GuaranteeCase) => (c.charges || []).filter(ch =>
+    ch.amount > 0 && ch.type === 'DAÑO_REPARACION'
+  );
+
+  const activeRepairCharges = (c: GuaranteeCase) => repairCharges(c).filter(ch => {
+    const status = ch.repairTracking?.status || 'PENDIENTE';
+    return status !== 'TERMINADA' && status !== 'CANCELADA';
+  });
+
+  const casesWithActiveRepairs = activeCases.filter(c =>
+    activeRepairCharges(c).length > 0 || c.preparationStatus === 'REPARANDO'
+  );
+
+  const activeRepairCount = activeCases.reduce((sum, c) => sum + activeRepairCharges(c).length, 0);
+
+  const liveReceivables = receivables.filter(r =>
+    r.pendingBalance > 0 && r.status !== 'PAGADA' && r.status !== 'INCOBRABLE'
+  );
+  const totalPendingTenant = liveReceivables.reduce((sum, r) => sum + r.pendingBalance, 0);
+
+  const ownerContributionsToRecover = openCases.reduce((sum, c) => sum + Math.max(0, c.ownerContribution || 0), 0);
+  const faunaFinancingToRecover = openCases.reduce((sum, c) => sum + Math.max(0, c.faunaFinancing || 0), 0);
+
+  const fundingByCase = new Map(openCases.map(c => [c.id, calculateFundingReadiness(c, settings)]));
+  const ownerRepairFundingPending = openCases.reduce(
+    (sum, c) => sum + (fundingByCase.get(c.id)?.ownerRepairPendingProvision || 0),
+    0
+  );
+  const ownerServicePending = openCases.reduce(
+    (sum, c) => sum + (fundingByCase.get(c.id)?.ownerServicePending || 0),
+    0
+  );
+
+  let faunaRecoveredThisMonth = 0;
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+
+  cases.forEach(c => {
+    (c.movements || []).forEach(m => {
+      if (m.type !== 'RECUPERACION_FAUNA') return;
+      const movementDate = parseDateStr(m.date);
+      if (!movementDate) return;
+      if (movementDate.getMonth() === currentMonth && movementDate.getFullYear() === currentYear) {
+        faunaRecoveredThisMonth += Math.max(0, m.amount);
+      }
+    });
+  });
+
+  const monthLabelRaw = new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date());
+  const monthLabel = monthLabelRaw.charAt(0).toUpperCase() + monthLabelRaw.slice(1);
+
+  const stageForCase = (c: GuaranteeCase) => {
+    if (c.isCompleted) return 'LISTO_CERRAR';
+    if (c.liquidationStatus === 'EMITIDA') return 'CONFIRMADA';
+    if (c.liquidationStatus === 'LISTA') return 'LISTA_CONFIRMAR';
+    if (activeRepairCharges(c).length > 0 || c.preparationStatus === 'REPARANDO') return 'REPARACIONES';
+    if (c.preparationStatus === 'PENDIENTE') return 'PREPARANDO';
+    return 'ANTECEDENTES';
+  };
+
+  const stageCounts = {
+    PREPARANDO: 0,
+    REPARACIONES: 0,
+    ANTECEDENTES: 0,
+    LISTA_CONFIRMAR: 0,
+    CONFIRMADA: 0,
+    LISTO_CERRAR: 0
+  };
+
+  openCases.forEach(c => {
+    stageCounts[stageForCase(c)] += 1;
+  });
+
+  const getAttentionCategory = (c: GuaranteeCase) => {
     if (c.isCompleted) {
       return { priority: 0, reason: 'Caso completado · pendiente de cerrar' };
     }
 
     const daysOpen = calculateDaysDifference(c.receptionDate);
-    const managementOverdue = c.nextManagementDate && isOverdue(c.nextManagementDate);
-    const deadlineAlert = daysOpen >= 45;
-    const hasDelayedRepairs = c.repairs.some(r => r.status !== 'TERMINADA' && r.commitmentDate && isOverdue(r.commitmentDate));
+    const managementOverdue = Boolean(c.nextManagementDate && isOverdue(c.nextManagementDate));
+    const deadlineAlert = daysOpen >= settings.alertDay;
+    const delayedRepair = activeRepairCharges(c).find(ch =>
+      Boolean(ch.repairTracking?.commitmentDate && isOverdue(ch.repairTracking.commitmentDate))
+    );
+    const readiness = fundingByCase.get(c.id);
     const isBlocked = c.blockedBy !== 'SIN_BLOQUEO';
     const missingManagement = !c.nextManagement || !c.nextManagement.trim();
 
@@ -158,16 +154,30 @@ export const Dashboard: React.FC = () => {
       return { priority: 1, reason: 'Próxima gestión vencida' };
     }
     if (deadlineAlert) {
-      return { priority: 2, reason: daysOpen > 60 ? 'Plazo máximo superado (>60d)' : 'Próximo a plazo máximo (45d+)' };
+      return {
+        priority: 2,
+        reason: daysOpen > settings.maxLiquidationDays
+          ? `Plazo máximo superado (${daysOpen} días)`
+          : `Caso en alerta de plazo (${daysOpen} días)`
+      };
     }
-    if (hasDelayedRepairs) {
-      return { priority: 3, reason: 'Reparación atrasada' };
+    if (delayedRepair) {
+      return { priority: 3, reason: `Reparación atrasada: ${delayedRepair.description}` };
+    }
+    if ((readiness?.ownerRepairPendingProvision || 0) > 0) {
+      return { priority: 4, reason: `Faltan ${formatCLP(readiness!.ownerRepairPendingProvision)} del propietario para reparaciones` };
     }
     if (isBlocked) {
-      return { priority: 4, reason: `Bloqueado por ${c.blockedBy}` };
+      return { priority: 5, reason: `Bloqueado por ${c.blockedBy.replace(/_/g, ' ').toLowerCase()}` };
+    }
+    if (c.liquidationStatus === 'LISTA') {
+      return { priority: 6, reason: 'Lista para confirmar liquidación' };
+    }
+    if ((readiness?.ownerServicePending || 0) > 0) {
+      return { priority: 7, reason: `${formatCLP(readiness!.ownerServicePending)} en servicios pendientes del propietario` };
     }
     if (missingManagement) {
-      return { priority: 5, reason: 'Sin próxima gestión registrada' };
+      return { priority: 8, reason: 'Sin próxima gestión registrada' };
     }
 
     return null;
@@ -175,141 +185,104 @@ export const Dashboard: React.FC = () => {
 
   const prioritizedCases = openCases
     .map(c => ({ caseObj: c, category: getAttentionCategory(c) }))
-    .filter(item => item.category !== null)
-    .sort((a, b) => a.category!.priority - b.category!.priority);
+    .filter((item): item is { caseObj: GuaranteeCase; category: { priority: number; reason: string } } => Boolean(item.category))
+    .sort((a, b) => a.category.priority - b.category.priority);
 
   const handleSelectCase = (id: string) => {
     setSelectedCaseId(id);
     setActiveView('case-detail');
   };
 
+  const stageCards = [
+    ['PREPARANDO', 'Preparando salida', 'Recepción y antecedentes iniciales'],
+    ['REPARACIONES', 'Reparaciones en curso', 'Trabajos pendientes o en ejecución'],
+    ['ANTECEDENTES', 'Completando antecedentes', 'Checklist previo a liquidar'],
+    ['LISTA_CONFIRMAR', 'Lista para confirmar', 'Liquidación preparada'],
+    ['CONFIRMADA', 'Liquidación confirmada', 'Pendiente de devolución o cobranza'],
+    ['LISTO_CERRAR', 'Listo para cerrar', 'Sin obligaciones operativas pendientes']
+  ] as const;
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      
-      {/* ==================================================
-          1. TOP KPIS PRINCIPALES (MÁXIMO 4)
-         ================================================== */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
-        
-        {/* KPI 1: Casos Abiertos */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">
-                Casos Abiertos
-              </span>
-              <span className="text-2xl font-black text-slate-900 mt-1 block">
-                {casosAbiertos} <span className="text-xs font-semibold text-slate-500">casos</span>
-              </span>
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Casos abiertos</span>
+              <span className="text-2xl font-black text-slate-900 mt-1 block">{openCases.length}</span>
             </div>
-            <div className="p-2.5 bg-slate-100 rounded-xl text-[#1E382B]">
-              <Building2 className="w-4 h-4" />
-            </div>
+            <div className="p-2.5 bg-slate-100 rounded-xl text-[#1E382B]"><Building2 className="w-4 h-4" /></div>
           </div>
           <p className="text-[10px] text-slate-500 font-medium mt-2">
             {activeCases.length} en gestión · {completedPendingClose.length} listos para cerrar
           </p>
         </div>
 
-        {/* KPI 2: Por Vencer */}
-        <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200/80 text-amber-950 shadow-2xs">
+        <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200/80 shadow-2xs">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider block">
-                Por Vencer
-              </span>
-              <span className="text-2xl font-black text-amber-900 mt-1 block">
-                {porVencer} <span className="text-xs font-semibold text-amber-700">casos</span>
-              </span>
+              <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider block">Requieren atención</span>
+              <span className="text-2xl font-black text-amber-950 mt-1 block">{prioritizedCases.length}</span>
             </div>
-            <div className="p-2.5 bg-amber-100/90 text-amber-800 rounded-xl border border-amber-200">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
+            <div className="p-2.5 bg-amber-100 rounded-xl text-amber-800"><AlertTriangle className="w-4 h-4" /></div>
           </div>
-          <p className="text-[10px] text-amber-800 font-medium mt-2">
-            {casosVencidos} vencidos (&gt;60d) • {casosProximosVencer} alerta (45d+)
-          </p>
+          <p className="text-[10px] text-amber-800 font-medium mt-2">Gestiones, plazos, fondos o cierres pendientes</p>
         </div>
 
-        {/* KPI 3: Reparando */}
-        <div className="bg-blue-50/70 p-4 rounded-2xl border border-blue-200/80 text-blue-950 shadow-2xs">
+        <div className="bg-blue-50/70 p-4 rounded-2xl border border-blue-200/80 shadow-2xs">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-[10px] font-extrabold text-blue-800 uppercase tracking-wider block">
-                Reparando
-              </span>
-              <span className="text-2xl font-black text-blue-950 mt-1 block">
-                {enReparacion} <span className="text-xs font-semibold text-blue-700">propiedades</span>
-              </span>
+              <span className="text-[10px] font-extrabold text-blue-800 uppercase tracking-wider block">Reparaciones activas</span>
+              <span className="text-2xl font-black text-blue-950 mt-1 block">{casesWithActiveRepairs.length}</span>
             </div>
-            <div className="p-2.5 bg-blue-100 text-blue-800 rounded-xl border border-blue-200">
-              <Wrench className="w-4 h-4" />
-            </div>
+            <div className="p-2.5 bg-blue-100 rounded-xl text-blue-800"><Wrench className="w-4 h-4" /></div>
           </div>
-          <p className="text-[10px] text-blue-800 font-medium mt-2">Obras de salida en ejecución</p>
+          <p className="text-[10px] text-blue-800 font-medium mt-2">{activeRepairCount} trabajos pendientes o en ejecución</p>
         </div>
 
-        {/* KPI 4: Pendiente Financiero */}
         <div className="bg-emerald-900 p-4 rounded-2xl text-white shadow-md shadow-emerald-950/10">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-[10px] font-extrabold text-emerald-300 uppercase tracking-wider block">
-                Pendiente Financiero
-              </span>
-              <span className="text-xl font-black text-white mt-1 block font-mono">
-                {formatCLP(pendienteFinanciero)}
-              </span>
+              <span className="text-[10px] font-extrabold text-emerald-300 uppercase tracking-wider block">Por cobrar arrendatarios</span>
+              <span className="text-xl font-black text-white mt-1 block font-mono">{formatCLP(totalPendingTenant)}</span>
             </div>
-            <div className="p-2.5 bg-emerald-800/80 rounded-xl text-emerald-300 border border-emerald-700/50">
-              <DollarSign className="w-4 h-4" />
-            </div>
+            <div className="p-2.5 bg-emerald-800/80 rounded-xl text-emerald-300"><DollarSign className="w-4 h-4" /></div>
           </div>
-          <p className="text-[10px] text-emerald-200/80 font-medium mt-2">Por cobrar + financiamiento activo</p>
+          <p className="text-[10px] text-emerald-200/80 font-medium mt-2">{liveReceivables.length} cuentas con saldo vigente</p>
         </div>
-
       </div>
 
-
-      {/* ==================================================
-          2. SECCIÓN PRINCIPAL: CASOS QUE REQUIEREN ATENCIÓN
-         ================================================== */}
       <section className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
-        <div className="p-4 bg-[#1E382B] text-white flex items-center justify-between">
+        <div className="p-4 bg-[#1E382B] text-white flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-amber-400/20 text-amber-300 rounded-lg">
-              <AlertTriangle className="w-4 h-4" />
-            </div>
+            <div className="p-1.5 bg-amber-400/20 text-amber-300 rounded-lg"><AlertTriangle className="w-4 h-4" /></div>
             <div>
-              <h3 className="font-extrabold text-sm tracking-tight">Casos que Requieren Atención</h3>
-              <p className="text-[11px] text-emerald-200/80 font-medium">Priorizados automáticamente por vencimientos, obras y bloqueos</p>
+              <h3 className="font-extrabold text-sm tracking-tight">Casos que requieren atención</h3>
+              <p className="text-[11px] text-emerald-200/80 font-medium">Solo situaciones que requieren una acción concreta</p>
             </div>
           </div>
           <span className="text-xs bg-emerald-900/90 border border-emerald-700/60 px-3 py-1 rounded-full font-bold text-emerald-200">
-            {prioritizedCases.length} pendientes de acción
+            {prioritizedCases.length} pendientes
           </span>
         </div>
 
         {prioritizedCases.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs">
             <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500 mb-2" />
-            <strong className="text-slate-800 text-sm block mb-0.5">¡Todo al día!</strong>
-            No hay casos abiertos que requieran atención inmediata.
+            <strong className="text-slate-800 text-sm block mb-0.5">Todo al día</strong>
+            No hay casos abiertos que requieran una acción inmediata.
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
             {prioritizedCases.map(({ caseObj, category }) => {
-              const overdueMgmt = caseObj.nextManagementDate && isOverdue(caseObj.nextManagementDate);
+              const overdueManagement = Boolean(caseObj.nextManagementDate && isOverdue(caseObj.nextManagementDate));
               const formattedDate = formatShortDateStr(caseObj.nextManagementDate);
               const isReadyToClose = Boolean(caseObj.isCompleted);
 
               return (
-                <div 
-                  key={caseObj.id} 
-                  className="p-4 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
-                >
-                  {/* Left block: ID, Property & Attention Reason */}
+                <div key={caseObj.id} className="p-4 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                   <div className="flex items-start gap-3 min-w-[280px]">
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-[#1E382B] shrink-0 mt-0.5">
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-[#1E382B] shrink-0 mt-0.5">
                       <Building2 className="w-4 h-4" />
                     </div>
                     <div>
@@ -317,29 +290,15 @@ export const Dashboard: React.FC = () => {
                         <strong className="text-[#1E382B] font-extrabold text-sm">{caseObj.id}</strong>
                         <span className="text-slate-800 font-semibold">{caseObj.propertyAddress}, {caseObj.propertyUnit}</span>
                       </div>
-                      
-                      {/* Reason Tag */}
                       <div className="mt-1 flex items-center gap-2 flex-wrap">
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border inline-flex items-center gap-1 ${isReadyToClose ? 'bg-emerald-100 text-emerald-900 border-emerald-200' : 'bg-rose-100 text-rose-900 border-rose-200'}`}>
-                          {isReadyToClose ? (
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          ) : (
-                            <ShieldAlert className="w-3 h-3 text-rose-600" />
-                          )}
-                          {isReadyToClose ? category?.reason : `Motivo: ${category?.reason}`}
+                          {isReadyToClose ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <ShieldAlert className="w-3 h-3 text-rose-600" />}
+                          {category.reason}
                         </span>
-
-                        {/* Optional Blocked Badge */}
-                        {caseObj.blockedBy !== 'SIN_BLOQUEO' && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200">
-                            Bloqueado: {caseObj.blockedBy}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Middle block: Next Management, Date & Responsible */}
                   <div className="flex-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="space-y-0.5">
                       <span className="text-[10px] font-bold text-slate-400 uppercase block">Próxima gestión</span>
@@ -347,15 +306,11 @@ export const Dashboard: React.FC = () => {
                         {caseObj.nextManagement || <span className="text-rose-500 italic">Pendiente definir gestión</span>}
                       </p>
                     </div>
-
                     <div className="flex items-center gap-3 shrink-0 text-slate-600">
-                      <div className="text-right sm:text-left">
+                      <div>
                         <span className="text-[10px] font-bold text-slate-400 uppercase block">Fecha</span>
-                        <span className={`font-bold ${overdueMgmt ? 'text-rose-600 font-extrabold' : 'text-slate-800'}`}>
-                          {formattedDate}
-                        </span>
+                        <span className={`font-bold ${overdueManagement ? 'text-rose-600' : 'text-slate-800'}`}>{formattedDate}</span>
                       </div>
-
                       <div className="border-l border-slate-200 pl-3">
                         <span className="text-[10px] font-bold text-slate-400 uppercase block">Responsable</span>
                         <span className="font-semibold text-slate-800 inline-flex items-center gap-1">
@@ -366,16 +321,9 @@ export const Dashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Right block: Button */}
-                  <div className="shrink-0 self-end md:self-center">
-                    <button
-                      onClick={() => handleSelectCase(caseObj.id)}
-                      className="px-3.5 py-2 bg-[#1E382B] hover:bg-[#14261d] text-white rounded-xl font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    >
-                      <span>Ver caso</span>
-                      <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-                    </button>
-                  </div>
+                  <button onClick={() => handleSelectCase(caseObj.id)} className="px-3.5 py-2 bg-[#1E382B] hover:bg-[#14261d] text-white rounded-xl font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0">
+                    Ver caso <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
+                  </button>
                 </div>
               );
             })}
@@ -383,181 +331,71 @@ export const Dashboard: React.FC = () => {
         )}
       </section>
 
-
-      {/* ==================================================
-          3. FLUJO OPERATIVO (CONTADORES CLAROS) Y ESTADO FINANCIERO
-         ================================================== */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Col 1: Flujo Operativo Simplificado */}
-        <div className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-[#1E382B]" />
-                Flujo Operativo de Casos
-              </h3>
-              <p className="text-xs text-slate-500 font-medium">Contadores de estado y detección de cuellos de botella</p>
-            </div>
-            <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
-              {activeCases.length} casos activos
-            </span>
+        <section className="lg:col-span-7 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+              <Clock3 className="w-4 h-4 text-[#1E382B]" /> Estado actual de los casos
+            </h3>
+            <p className="text-xs text-slate-500 font-medium">Una sola etapa operativa por cada caso abierto</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            
-            {/* Box PREPARACIÓN */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                <span className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                  <Wrench className="w-3.5 h-3.5 text-amber-600" />
-                  PREPARACIÓN
-                </span>
-                <span className="text-[10px] text-slate-500 font-semibold">Reparaciones de salida</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 text-center pt-1">
-                <div className="p-2 bg-white rounded-lg border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-400 block uppercase">Pendientes</span>
-                  <strong className="text-base font-black text-slate-800">{pendientesPreparacion}</strong>
-                </div>
-                <div className="p-2 bg-amber-50 rounded-lg border border-amber-200/80">
-                  <span className="text-[10px] font-bold text-amber-800 block uppercase">Reparando</span>
-                  <strong className="text-base font-black text-amber-900">{enReparacion}</strong>
-                </div>
-                <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200/80">
-                  <span className="text-[10px] font-bold text-emerald-800 block uppercase">Listas</span>
-                  <strong className="text-base font-black text-emerald-900">{preparadasListas}</strong>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+            {stageCards.map(([key, label, description]) => (
+              <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wide block">{label}</span>
+                    <span className="text-[10px] text-slate-400 leading-tight block mt-1">{description}</span>
+                  </div>
+                  <strong className="text-xl font-black text-[#1E382B]">{stageCounts[key]}</strong>
                 </div>
               </div>
-            </div>
-
-            {/* Box LIQUIDACIÓN */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                <span className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-[#2D8B73]" />
-                  LIQUIDACIÓN
-                </span>
-                <span className="text-[10px] text-slate-500 font-semibold">Proceso administrativo</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5 text-center pt-1">
-                <div className="p-2 bg-slate-100 rounded-lg border border-slate-200">
-                  <span className="text-[10px] font-bold text-slate-500 block uppercase">En prep.</span>
-                  <strong className="text-base font-black text-slate-800">{enPreparacionLiquidation}</strong>
-                </div>
-                <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200/80">
-                  <span className="text-[10px] font-bold text-emerald-800 block uppercase">Listas</span>
-                  <strong className="text-base font-black text-emerald-900">{listasParaLiquidar}</strong>
-                </div>
-                <div className="p-2 bg-[#1E382B] text-white rounded-lg">
-                  <span className="text-[10px] font-bold text-emerald-300 block uppercase">Emitidas</span>
-                  <strong className="text-base font-black text-white">{emitidasLiquidation}</strong>
-                </div>
-              </div>
-            </div>
-
+            ))}
           </div>
 
-          {/* Requisitos faltantes más frecuentes en 'En preparación' */}
-          <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/60 space-y-2">
-            <span className="text-[11px] font-bold text-amber-900 block">
-              Antecedentes pendientes en Liquidación (&quot;En preparación&quot;):
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] text-slate-700">
-              <div className="bg-white p-2 rounded-lg border border-amber-200/80 text-center">
-                <span className="block text-[10px] text-slate-400 font-medium">Presupuesto</span>
-                <strong className="font-extrabold text-slate-800">{faltantesCounts.presupuesto} casos</strong>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-amber-200/80 text-center">
-                <span className="block text-[10px] text-slate-400 font-medium">Gastos Comunes</span>
-                <strong className="font-extrabold text-slate-800">{faltantesCounts.gastosComunes} casos</strong>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-amber-200/80 text-center">
-                <span className="block text-[10px] text-slate-400 font-medium">Agua</span>
-                <strong className="font-extrabold text-slate-800">{faltantesCounts.agua} casos</strong>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-amber-200/80 text-center">
-                <span className="block text-[10px] text-slate-400 font-medium">Electricidad</span>
-                <strong className="font-extrabold text-slate-800">{faltantesCounts.electricidad} casos</strong>
-              </div>
-              <div className="bg-white p-2 rounded-lg border border-amber-200/80 text-center">
-                <span className="block text-[10px] text-slate-400 font-medium">Gas</span>
-                <strong className="font-extrabold text-slate-800">{faltantesCounts.gas} casos</strong>
-              </div>
-            </div>
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-[11px] text-emerald-900 flex items-start gap-2">
+            <FileCheck2 className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>El dashboard ya no cuenta reparaciones desde el módulo antiguo: toma el estado directamente de los cargos clasificados como Daño / reparación.</span>
           </div>
+        </section>
 
-        </div>
-
-        {/* Col 2: Estado Financiero Interno */}
-        <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5 flex flex-col justify-between">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-[#1E382B]" />
-                Estado Financiero Interno
-              </h3>
-              <p className="text-xs text-slate-500 font-medium">Saldos pendientes de cobrar y recuperar</p>
-            </div>
+        <section className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-3.5">
+          <div className="border-b border-slate-100 pb-3">
+            <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-[#1E382B]" /> Estado financiero interno
+            </h3>
+            <p className="text-xs text-slate-500 font-medium">Saldos actuales, sin sumar conceptos que representan la misma deuda</p>
           </div>
 
           <div className="space-y-2">
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
-                  Por Cobrar a Arrendatarios
-                </span>
-                <span className="text-[11px] text-slate-500 font-medium">Saldos pendientes de cobro</span>
-              </div>
-              <strong className="text-sm font-black text-slate-900 font-mono">
-                {formatCLP(totalPendienteCobrar)}
-              </strong>
+              <div><span className="text-[10px] font-extrabold text-slate-500 uppercase block">Por cobrar a arrendatarios</span><span className="text-[11px] text-slate-500">Saldo vigente</span></div>
+              <strong className="text-sm font-black text-slate-900 font-mono">{formatCLP(totalPendingTenant)}</strong>
             </div>
-
             <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-extrabold text-blue-900 uppercase tracking-wider block">
-                  Aportes Propietarios por Recuperar
-                </span>
-                <span className="text-[11px] text-blue-700 font-medium">Aportes para reparación</span>
-              </div>
-              <strong className="text-sm font-black text-blue-900 font-mono">
-                {formatCLP(aportesPropietariosPendientes)}
-              </strong>
+              <div><span className="text-[10px] font-extrabold text-blue-900 uppercase block">Aportes propietario por recuperar</span><span className="text-[11px] text-blue-700">Ya provisionados por el propietario</span></div>
+              <strong className="text-sm font-black text-blue-900 font-mono">{formatCLP(ownerContributionsToRecover)}</strong>
             </div>
-
             <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-extrabold text-[#1E382B] uppercase tracking-wider block">
-                  Financiamiento Fauna por Recuperar
-                </span>
-                <span className="text-[11px] text-emerald-700 font-medium">Fondos adelantados por Fauna</span>
-              </div>
-              <strong className="text-sm font-black text-[#1E382B] font-mono">
-                {formatCLP(financiamientoFaunaVigente)}
-              </strong>
+              <div><span className="text-[10px] font-extrabold text-[#1E382B] uppercase block">Financiamiento Fauna por recuperar</span><span className="text-[11px] text-emerald-700">Cobertura Full efectivamente aplicada</span></div>
+              <strong className="text-sm font-black text-[#1E382B] font-mono">{formatCLP(faunaFinancingToRecover)}</strong>
             </div>
-
-            <div className="p-3 bg-slate-100/90 rounded-xl border border-slate-200 flex items-center justify-between text-slate-800">
-              <div>
-                <span className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider block">
-                  Recuperado por Fauna Este Mes
-                </span>
-                <span className="text-[11px] text-slate-500 font-medium">Agosto 2026</span>
-              </div>
-              <strong className="text-sm font-black font-mono text-emerald-800">
-                {formatCLP(recuperadoFaunaEsteMes)}
-              </strong>
+            <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 flex items-center justify-between">
+              <div><span className="text-[10px] font-extrabold text-amber-900 uppercase block">Fondos propietario pendientes para reparar</span><span className="text-[11px] text-amber-700">Bloquean ejecución de reparaciones</span></div>
+              <strong className="text-sm font-black text-amber-900 font-mono">{formatCLP(ownerRepairFundingPending)}</strong>
+            </div>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+              <div><span className="text-[10px] font-extrabold text-slate-600 uppercase block">Servicios pendientes del propietario</span><span className="text-[11px] text-slate-500">No bloquean la liquidación</span></div>
+              <strong className="text-sm font-black text-slate-900 font-mono">{formatCLP(ownerServicePending)}</strong>
+            </div>
+            <div className="p-3 bg-slate-100/90 rounded-xl border border-slate-200 flex items-center justify-between">
+              <div><span className="text-[10px] font-extrabold text-slate-600 uppercase block">Recuperado por Fauna este mes</span><span className="text-[11px] text-slate-500">{monthLabel}</span></div>
+              <strong className="text-sm font-black font-mono text-emerald-800">{formatCLP(faunaRecoveredThisMonth)}</strong>
             </div>
           </div>
-
-          <div className="text-[10px] text-slate-400 text-center font-medium pt-1">
-            Métricas sincronizadas automáticamente con abonos y liquidaciones.
-          </div>
-        </div>
-
+        </section>
       </div>
-
     </div>
   );
 };
