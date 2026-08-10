@@ -85,7 +85,9 @@ export const Dashboard: React.FC = () => {
   const ownerContributionsToRecover = openCases.reduce((sum, c) => sum + Math.max(0, c.ownerContribution || 0), 0);
   const faunaFinancingToRecover = openCases.reduce((sum, c) => sum + Math.max(0, c.faunaFinancing || 0), 0);
 
-  const fundingByCase = new Map(openCases.map(c => [c.id, calculateFundingReadiness(c, settings)]));
+  const fundingByCase = new Map<string, ReturnType<typeof calculateFundingReadiness>>(
+    openCases.map(c => [c.id, calculateFundingReadiness(c, settings)] as const)
+  );
   const ownerRepairFundingPending = openCases.reduce(
     (sum, c) => sum + (fundingByCase.get(c.id)?.ownerRepairPendingProvision || 0),
     0
@@ -113,7 +115,9 @@ export const Dashboard: React.FC = () => {
   const monthLabelRaw = new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date());
   const monthLabel = monthLabelRaw.charAt(0).toUpperCase() + monthLabelRaw.slice(1);
 
-  const stageForCase = (c: GuaranteeCase) => {
+  type StageKey = 'PREPARANDO' | 'REPARACIONES' | 'ANTECEDENTES' | 'LISTA_CONFIRMAR' | 'CONFIRMADA' | 'LISTO_CERRAR';
+
+  const stageForCase = (c: GuaranteeCase): StageKey => {
     if (c.isCompleted) return 'LISTO_CERRAR';
     if (c.liquidationStatus === 'EMITIDA') return 'CONFIRMADA';
     if (c.liquidationStatus === 'LISTA') return 'LISTA_CONFIRMAR';
@@ -122,7 +126,7 @@ export const Dashboard: React.FC = () => {
     return 'ANTECEDENTES';
   };
 
-  const stageCounts = {
+  const stageCounts: Record<StageKey, number> = {
     PREPARANDO: 0,
     REPARACIONES: 0,
     ANTECEDENTES: 0,
@@ -193,14 +197,14 @@ export const Dashboard: React.FC = () => {
     setActiveView('case-detail');
   };
 
-  const stageCards = [
+  const stageCards: Array<[StageKey, string, string]> = [
     ['PREPARANDO', 'Preparando salida', 'Recepción y antecedentes iniciales'],
     ['REPARACIONES', 'Reparaciones en curso', 'Trabajos pendientes o en ejecución'],
     ['ANTECEDENTES', 'Completando antecedentes', 'Checklist previo a liquidar'],
     ['LISTA_CONFIRMAR', 'Lista para confirmar', 'Liquidación preparada'],
     ['CONFIRMADA', 'Liquidación confirmada', 'Pendiente de devolución o cobranza'],
     ['LISTO_CERRAR', 'Listo para cerrar', 'Sin obligaciones operativas pendientes']
-  ] as const;
+  ];
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
@@ -356,7 +360,7 @@ export const Dashboard: React.FC = () => {
 
           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-[11px] text-emerald-900 flex items-start gap-2">
             <FileCheck2 className="w-4 h-4 mt-0.5 shrink-0" />
-            <span>El dashboard ya no cuenta reparaciones desde el módulo antiguo: toma el estado directamente de los cargos clasificados como Daño / reparación.</span>
+            <span>El dashboard toma el avance de las reparaciones directamente desde los cargos clasificados como Daño / reparación.</span>
           </div>
         </section>
 
@@ -365,7 +369,7 @@ export const Dashboard: React.FC = () => {
             <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
               <DollarSign className="w-4 h-4 text-[#1E382B]" /> Estado financiero interno
             </h3>
-            <p className="text-xs text-slate-500 font-medium">Saldos actuales, sin sumar conceptos que representan la misma deuda</p>
+            <p className="text-xs text-slate-500 font-medium">Saldos actuales mostrados por concepto</p>
           </div>
 
           <div className="space-y-2">
