@@ -39,7 +39,7 @@ export const FullCoverageDemoSeeder: React.FC = () => {
       preparationStatus: 'PENDIENTE',
       liquidationStatus: 'EN_PREPARACION',
       blockedBy: 'SIN_BLOQUEO',
-      nextManagement: 'Provisionar fondos o ajustar reparaciones',
+      nextManagement: 'Gestionar servicios pendientes con propietario',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
     });
@@ -79,12 +79,13 @@ export const FullCoverageDemoSeeder: React.FC = () => {
           photos: []
         }
       ],
-      // La cobertura Full se recalcula automáticamente según daños/reparaciones.
-      // En este caso alcanza el máximo de $400.000 y queda una provisión de $100.000.
+      // La garantía cubre $400.000 de daños y Plan Full los $400.000 restantes.
+      // Los $100.000 de servicios quedan como obligación posterior del propietario:
+      // no bloquean la liquidación ni obligan a reducir el presupuesto de reparaciones.
       ownerContribution: 0,
       fullCoverageApplied: 400000,
       faunaFinancing: 0,
-      nextManagement: 'Provisionar $100.000 o ajustar reparaciones',
+      nextManagement: 'Gestionar $100.000 de gastos comunes/servicios con propietario',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
     });
