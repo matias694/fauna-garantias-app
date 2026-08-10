@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatCLP } from '../utils/formatters';
 import { calculateGuaranteeFinances } from '../utils/calculations';
+import { getSettlementState } from '../utils/settlementState';
 import { Search, Plus, ChevronRight, UserCheck } from 'lucide-react';
 
 interface GuaranteesListProps {
@@ -9,7 +10,7 @@ interface GuaranteesListProps {
 }
 
 export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }) => {
-  const { cases, setSelectedCaseId, setActiveView, settings } = useApp();
+  const { cases, receivables, setSelectedCaseId, setActiveView, settings } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCaseStatus, setFilterCaseStatus] = useState<string>('ALL');
@@ -171,7 +172,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
               <option value="ALL">Todos</option>
               <option value="SOBRANTE">Devolver saldo</option>
               <option value="EXACTO">Sin saldo ($0)</option>
-              <option value="INSUFICIENTE">Debe saldo</option>
+              <option value="INSUFICIENTE">Liquidación insuficiente</option>
             </select>
           </div>
         </div>
@@ -186,7 +187,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                 <th className="p-3.5">Arrendatario</th>
                 <th className="p-3.5">Preparación</th>
                 <th className="p-3.5">Liquidación</th>
-                <th className="p-3.5">Resultado</th>
+                <th className="p-3.5">Resultado actual</th>
                 <th className="p-3.5">Próxima Gestión</th>
                 <th className="p-3.5 text-right">Acción</th>
               </tr>
@@ -196,6 +197,8 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                 <tr><td colSpan={7} className="p-8 text-center text-slate-500 text-xs">No se encontraron registros de garantías con los criterios seleccionados.</td></tr>
               ) : filteredCases.map(c => {
                 const fin = calculateGuaranteeFinances(c, settings);
+                const receivable = receivables.find(r => r.caseId === c.id);
+                const settlement = getSettlementState(c, receivable, settings);
                 const overdueMgmt = !c.isClosed && Boolean(c.nextManagementDate) && isOverdue(c.nextManagementDate);
                 const formattedDate = formatShortDateStr(c.nextManagementDate);
                 const liquidationLabel = c.liquidationStatus === 'EN_PREPARACION'
@@ -231,12 +234,20 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                     <td className="p-3.5 whitespace-nowrap">
                       {c.liquidationStatus !== 'EMITIDA' ? (
                         <span className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 inline-block">Pendiente de liquidar</span>
-                      ) : fin.isInsufficient ? (
-                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-rose-50 text-rose-800 border border-rose-200 inline-block font-mono">Debe {formatCLP(fin.tenantDeficit)}</span>
-                      ) : fin.isSurplus ? (
-                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 inline-block font-mono">Devolver {formatCLP(fin.refundToTenant)}</span>
-                      ) : (
+                      ) : settlement.kind === 'RECEIVABLE_PAID' ? (
+                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 inline-block">Cobranza pagada</span>
+                      ) : settlement.kind === 'RECEIVABLE_UNCOLLECTIBLE' ? (
+                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-slate-100 text-slate-700 border border-slate-300 inline-block font-mono">Incobrable {formatCLP(settlement.pendingAmount)}</span>
+                      ) : settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL' ? (
+                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-rose-50 text-rose-800 border border-rose-200 inline-block font-mono">Por cobrar {formatCLP(settlement.pendingAmount)}</span>
+                      ) : settlement.kind === 'REFUND_TRANSFERRED' ? (
+                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 inline-block">Devolución transferida</span>
+                      ) : settlement.kind === 'REFUND_PENDING' ? (
+                        <span className="px-2 py-1 rounded-md text-[11px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 inline-block font-mono">Devolver {formatCLP(settlement.pendingAmount)}</span>
+                      ) : fin.isExact ? (
                         <span className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 inline-block">Sin saldo</span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-md text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 inline-block">Sin acción pendiente</span>
                       )}
                     </td>
 
