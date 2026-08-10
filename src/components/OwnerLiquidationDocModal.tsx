@@ -61,7 +61,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
             </div>
 
             <div className="text-right">
-              <span className="text-xs uppercase font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 block w-fit ml-auto mb-1">LIQUIDACIÓN DE GARANTÍA · PROPIETARIO</span>
+              <span className="text-xs uppercase font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 block w-fit ml-auto mb-1">LIQUIDACIÓN DE GARANTÍA</span>
               <p className="text-slate-500 font-mono text-[11px]">N° Documento: <strong>LIQ-PROP-{guaranteeCase.id}</strong></p>
               <p className="text-slate-500 text-[11px]">Fecha Emisión: <strong>{todayStr}</strong></p>
             </div>
@@ -78,85 +78,85 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Propiedad Arrendada</span>
               <strong className="text-slate-900 text-sm block">{guaranteeCase.propertyAddress}, {guaranteeCase.propertyUnit}</strong>
               <p className="text-slate-600">Comuna: {guaranteeCase.propertyComuna}</p>
-              <p className="text-slate-600">Arrendatario saliente: {guaranteeCase.tenantName}</p>
+              <p className="text-slate-600">Fecha Recepción Propiedad: {formatDate(guaranteeCase.receptionDate)}</p>
             </div>
           </div>
 
           <div className="space-y-3">
             <h4 className="font-bold text-slate-900 text-sm uppercase tracking-wider border-b border-slate-200 pb-1">Detalle de cargos y abonos</h4>
 
-            {guaranteeCase.charges.length === 0 ? (
-              <p className="text-slate-500 italic">No se registraron cargos ni abonos para esta liquidación.</p>
-            ) : (
-              <table className="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
-                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
+            <table className="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
+              <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="p-2.5">N° / Fecha</th>
+                  <th className="p-2.5">Movimiento</th>
+                  <th className="p-2.5">Concepto / Descripción</th>
+                  <th className="p-2.5 text-right">Monto</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {guaranteeCase.charges.length === 0 ? (
                   <tr>
-                    <th className="p-2.5">N° / Fecha</th>
-                    <th className="p-2.5">Movimiento</th>
-                    <th className="p-2.5">Concepto / Descripción</th>
-                    <th className="p-2.5 text-right">Monto</th>
+                    <td colSpan={4} className="p-4 text-center text-slate-500 italic">No se registraron cargos ni abonos para esta liquidación.</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {guaranteeCase.charges.map((ch, idx) => {
-                    const isCredit = ch.amount < 0;
-                    return (
-                      <tr key={ch.id}>
-                        <td className="p-2.5 font-mono text-slate-500 text-[11px]">{idx + 1} • {formatDate(ch.date)}</td>
-                        <td className={`p-2.5 font-bold ${isCredit ? 'text-emerald-700' : 'text-rose-700'}`}>{isCredit ? 'Abono' : 'Cargo'}</td>
-                        <td className="p-2.5 text-slate-800"><strong>{ch.category.replace(/_/g, ' ')}</strong><br />{ch.description}</td>
-                        <td className={`p-2.5 text-right font-mono font-bold ${isCredit ? 'text-emerald-700' : 'text-slate-900'}`}>
-                          {isCredit ? '+' : '-'}{formatCLP(Math.abs(ch.amount))}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="border-t-2 border-slate-300 bg-slate-50">
-                  <tr className="border-b border-slate-200">
-                    <td colSpan={3} className="p-2.5 text-right text-slate-600 font-semibold">Total cargos y abonos</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-slate-900">-{formatCLP(fin.totalCharges)}</td>
-                  </tr>
-                  <tr className="border-b border-slate-200">
-                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Garantía disponible del contrato</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.guaranteeAmount)}</td>
-                  </tr>
-                  {hasFullBenefit && (
-                    <tr className="border-b border-slate-200">
-                      <td colSpan={3} className="p-2.5 text-right text-slate-600">Cobertura Plan Full aplicada a daños</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.fullCoverageApplied)}</td>
-                    </tr>
-                  )}
-                  {ownerSettlement.ownerContributionApplied > 0 && (
-                    <tr className="border-b border-slate-200">
-                      <td colSpan={3} className="p-2.5 text-right text-slate-600">Fondos ya pagados/provisionados por el propietario</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-blue-700">+{formatCLP(ownerSettlement.ownerContributionApplied)}</td>
-                    </tr>
-                  )}
-                  {ownerSettlement.refundToTenant > 0 && (
-                    <tr className="border-b border-slate-200">
-                      <td colSpan={3} className="p-2.5 text-right text-slate-600">Saldo de garantía a devolver al arrendatario</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-emerald-700">{formatCLP(ownerSettlement.refundToTenant)}</td>
-                    </tr>
-                  )}
-                  <tr className="bg-white border-t-2 border-slate-300">
-                    <td colSpan={3} className="p-3 text-right text-sm font-extrabold text-slate-900">RESULTADO PROPIETARIO</td>
-                    <td className={`p-3 text-right font-mono text-base font-black ${ownerTotalPending > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                      {ownerTotalPending > 0 ? `${formatCLP(ownerTotalPending)} PENDIENTE` : '$0'}
-                    </td>
-                  </tr>
-                  {ownerTotalPending > 0 && (
-                    <tr className="bg-white">
-                      <td colSpan={4} className="px-3 pb-3 text-right text-[10px] text-slate-500">
-                        {ownerSettlement.ownerRepairPending > 0 && <span>{formatCLP(ownerSettlement.ownerRepairPending)} reparaciones</span>}
-                        {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 && <span> · </span>}
-                        {ownerSettlement.ownerServicePending > 0 && <span>{formatCLP(ownerSettlement.ownerServicePending)} gastos comunes/servicios</span>}
+                ) : guaranteeCase.charges.map((ch, idx) => {
+                  const isCredit = ch.amount < 0;
+                  return (
+                    <tr key={ch.id}>
+                      <td className="p-2.5 font-mono text-slate-500 text-[11px]">{idx + 1} • {formatDate(ch.date)}</td>
+                      <td className={`p-2.5 font-bold ${isCredit ? 'text-emerald-700' : 'text-rose-700'}`}>{isCredit ? 'Abono' : 'Cargo'}</td>
+                      <td className="p-2.5 text-slate-800"><strong>{ch.category.replace(/_/g, ' ')}</strong><br />{ch.description}</td>
+                      <td className={`p-2.5 text-right font-mono font-bold ${isCredit ? 'text-emerald-700' : 'text-slate-900'}`}>
+                        {isCredit ? '+' : '-'}{formatCLP(Math.abs(ch.amount))}
                       </td>
                     </tr>
-                  )}
-                </tfoot>
-              </table>
-            )}
+                  );
+                })}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-300 bg-slate-50">
+                <tr className="border-b border-slate-200">
+                  <td colSpan={3} className="p-2.5 text-right text-slate-600 font-semibold">Total cargos y abonos</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">-{formatCLP(fin.totalCharges)}</td>
+                </tr>
+                <tr className="border-b border-slate-200">
+                  <td colSpan={3} className="p-2.5 text-right text-slate-600">Garantía disponible del contrato</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.guaranteeAmount)}</td>
+                </tr>
+                {hasFullBenefit && (
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Cobertura Plan Full aplicada a daños</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.fullCoverageApplied)}</td>
+                  </tr>
+                )}
+                {ownerSettlement.ownerContributionApplied > 0 && (
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Fondos ya pagados/provisionados por el propietario</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-blue-700">+{formatCLP(ownerSettlement.ownerContributionApplied)}</td>
+                  </tr>
+                )}
+                {ownerSettlement.refundToTenant > 0 && (
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Saldo de garantía a devolver al arrendatario</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">{formatCLP(ownerSettlement.refundToTenant)}</td>
+                  </tr>
+                )}
+                <tr className="bg-white border-t-2 border-slate-300">
+                  <td colSpan={3} className="p-3 text-right text-sm font-extrabold text-slate-900">RESULTADO PROPIETARIO</td>
+                  <td className={`p-3 text-right font-mono text-base font-black ${ownerTotalPending > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                    {ownerTotalPending > 0 ? `${formatCLP(ownerTotalPending)} PENDIENTE` : '$0'}
+                  </td>
+                </tr>
+                {ownerTotalPending > 0 && (
+                  <tr className="bg-white">
+                    <td colSpan={4} className="px-3 pb-3 text-right text-[10px] text-slate-500">
+                      {ownerSettlement.ownerRepairPending > 0 && <span>{formatCLP(ownerSettlement.ownerRepairPending)} reparaciones</span>}
+                      {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 && <span> · </span>}
+                      {ownerSettlement.ownerServicePending > 0 && <span>{formatCLP(ownerSettlement.ownerServicePending)} gastos comunes/servicios</span>}
+                    </td>
+                  </tr>
+                )}
+              </tfoot>
+            </table>
           </div>
 
           {hasFullBenefit && (
