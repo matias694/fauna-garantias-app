@@ -10,7 +10,7 @@ interface SummaryTabProps {
 }
 
 export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
-  const { updateGuaranteeCase, settings, receivables } = useApp();
+  const { addFollowUpComment, settings, receivables } = useApp();
 
   const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || '');
   const [nextDate, setNextDate] = useState(guaranteeCase.nextManagementDate || '');
@@ -30,12 +30,21 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const isOverdue = daysInProcess > settings.maxLiquidationDays;
   const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
   const shouldShowDeadlineAlert = !guaranteeCase.isCompleted && !guaranteeCase.isClosed && (isOverdue || isNearDeadline);
+  const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
 
-  const liquidationLabel = guaranteeCase.liquidationStatus === 'EN_PREPARACION'
-    ? 'EN PREPARACIÓN'
-    : guaranteeCase.liquidationStatus === 'EMITIDA'
-      ? 'CONFIRMADA'
-      : guaranteeCase.liquidationStatus;
+  const stageLabel = guaranteeCase.isClosed
+    ? 'Caso cerrado'
+    : guaranteeCase.isCompleted
+      ? 'Listo para cerrar'
+      : isConfirmed
+        ? 'Liquidación confirmada'
+        : guaranteeCase.liquidationStatus === 'LISTA'
+          ? 'Lista para confirmar liquidación'
+          : guaranteeCase.preparationStatus === 'REPARANDO'
+            ? 'Reparaciones en curso'
+            : guaranteeCase.preparationStatus === 'PENDIENTE'
+              ? 'Preparando salida'
+              : 'Completando antecedentes de liquidación';
 
   const resultLabel = fin.isSurplus
     ? `Devolver ${formatCLP(fin.refundToTenant)}`
@@ -45,11 +54,26 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
 
   const handleSaveNextManagement = (e: React.FormEvent) => {
     e.preventDefault();
-    updateGuaranteeCase(guaranteeCase.id, {
-      nextManagement,
-      nextManagementDate: nextDate,
-      nextManagementResponsible: nextResp
-    });
+
+    const oldManagement = guaranteeCase.nextManagement || '';
+    const oldDate = guaranteeCase.nextManagementDate || '';
+    const oldResp = guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '';
+    const changes: string[] = [];
+
+    if (oldManagement !== nextManagement) changes.push(`Gestión: “${oldManagement || 'Sin gestión'}” → “${nextManagement}”`);
+    if (oldDate !== nextDate) changes.push(`Fecha: ${oldDate || 'Sin fecha'} → ${nextDate || 'Sin fecha'}`);
+    if (oldResp !== nextResp) changes.push(`Responsable: ${oldResp || 'Sin responsable'} → ${nextResp || 'Sin responsable'}`);
+
+    if (changes.length > 0) {
+      addFollowUpComment(guaranteeCase.id, {
+        comment: `Próxima gestión actualizada desde Resumen:\n${changes.join('\n')}`,
+        area: 'General',
+        nextManagement,
+        nextManagementDate: nextDate,
+        nextManagementResponsible: nextResp
+      });
+    }
+
     setEditingNextManagement(false);
   };
 
@@ -73,16 +97,9 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
         <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100">
           <div className="flex flex-wrap items-center gap-2">
             <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
-              <span className="text-[9px] uppercase font-bold text-slate-400 mr-1.5">Preparación</span>
-              <strong className={`text-[11px] ${guaranteeCase.preparationStatus === 'LISTA' ? 'text-emerald-700' : guaranteeCase.preparationStatus === 'REPARANDO' ? 'text-amber-700' : 'text-slate-700'}`}>
-                {guaranteeCase.preparationStatus}
-              </strong>
-            </div>
-
-            <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
-              <span className="text-[9px] uppercase font-bold text-slate-400 mr-1.5">Liquidación</span>
-              <strong className={`text-[11px] ${guaranteeCase.liquidationStatus === 'EMITIDA' ? 'text-purple-700' : guaranteeCase.liquidationStatus === 'LISTA' ? 'text-emerald-700' : 'text-amber-700'}`}>
-                {liquidationLabel}
+              <span className="text-[9px] uppercase font-bold text-slate-400 mr-1.5">Etapa actual</span>
+              <strong className={`text-[11px] ${isConfirmed || guaranteeCase.isCompleted ? 'text-emerald-700' : guaranteeCase.liquidationStatus === 'LISTA' ? 'text-purple-700' : 'text-slate-700'}`}>
+                {stageLabel}
               </strong>
             </div>
 
@@ -118,13 +135,13 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           </div>
 
           <div className="p-4">
-            <span className="text-[9px] font-bold text-slate-400 uppercase block">Cargos</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase block">Neto cargos y abonos</span>
             <strong className="text-lg font-black text-slate-900 font-mono">{formatCLP(fin.totalCharges)}</strong>
-            <span className="text-[10px] text-slate-400 block">{guaranteeCase.charges.length} registrados</span>
+            <span className="text-[10px] text-slate-400 block">{guaranteeCase.charges.length} movimientos</span>
           </div>
 
           <div className="p-4">
-            <span className="text-[9px] font-bold text-slate-400 uppercase block">Resultado</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase block">{isConfirmed ? 'Resultado liquidación' : 'Resultado proyectado'}</span>
             <strong className={`text-lg font-black ${fin.isSurplus ? 'text-emerald-700' : fin.isInsufficient ? 'text-rose-700' : 'text-slate-800'}`}>
               {resultLabel}
             </strong>
@@ -148,31 +165,15 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           <form onSubmit={handleSaveNextManagement} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
             <div className="md:col-span-2">
               <label className="block text-[10px] font-semibold text-slate-500 mb-1">Próxima gestión</label>
-              <input
-                type="text"
-                required
-                value={nextManagement}
-                onChange={(e) => setNextManagement(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
-              />
+              <input type="text" required value={nextManagement} onChange={(e) => setNextManagement(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs" />
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-slate-500 mb-1">Fecha</label>
-              <input
-                type="text"
-                placeholder="DD/MM/AAAA"
-                value={nextDate}
-                onChange={(e) => setNextDate(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
-              />
+              <input type="text" placeholder="DD/MM/AAAA" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs" />
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-slate-500 mb-1">Responsable</label>
-              <select
-                value={nextResp}
-                onChange={(e) => setNextResp(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
-              >
+              <select value={nextResp} onChange={(e) => setNextResp(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs">
                 <option value="">Sin responsable</option>
                 {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
@@ -189,11 +190,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
               <strong className="text-sm text-slate-800 block truncate">{guaranteeCase.nextManagement || 'Sin próxima gestión programada'}</strong>
               <span className="text-[10px] text-slate-500">{guaranteeCase.nextManagementDate || 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setEditingNextManagement(true)}
-              className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer"
-            >
+            <button type="button" onClick={() => setEditingNextManagement(true)} className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer">
               <Edit3 className="w-3.5 h-3.5" /> Editar
             </button>
           </div>
@@ -201,11 +198,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowDetails(prev => !prev)}
-          className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 cursor-pointer"
-        >
+        <button type="button" onClick={() => setShowDetails(prev => !prev)} className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50 cursor-pointer">
           <div>
             <span className="text-xs font-bold text-slate-700">Datos del caso</span>
             <span className="text-[10px] text-slate-400 block">Propiedad, arrendatario y propietario</span>
