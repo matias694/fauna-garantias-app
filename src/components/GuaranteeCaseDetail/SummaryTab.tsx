@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { GuaranteeCase } from '../../types';
 import { formatCLP, formatDate, calculateDaysDifference } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
+import { getSettlementState } from '../../utils/settlementState';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Edit3 } from 'lucide-react';
 
 interface SummaryTabProps {
@@ -26,6 +27,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
+  const settlement = getSettlementState(guaranteeCase, receivable, settings);
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
   const isOverdue = daysInProcess > settings.maxLiquidationDays;
   const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
@@ -46,11 +48,39 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
               ? 'Preparando salida'
               : 'Completando antecedentes de liquidación';
 
-  const resultLabel = fin.isSurplus
+  const projectedResultLabel = fin.isSurplus
     ? `Devolver ${formatCLP(fin.refundToTenant)}`
     : fin.isInsufficient
       ? `Debe ${formatCLP(fin.tenantDeficit)}`
       : 'Sin saldo';
+
+  const resultLabel = !isConfirmed
+    ? projectedResultLabel
+    : settlement.kind === 'RECEIVABLE_PAID'
+      ? 'Cobranza pagada'
+      : settlement.kind === 'RECEIVABLE_UNCOLLECTIBLE'
+        ? `Incobrable ${formatCLP(settlement.pendingAmount)}`
+        : settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL'
+          ? `Saldo por cobrar ${formatCLP(settlement.pendingAmount)}`
+          : settlement.kind === 'REFUND_TRANSFERRED'
+            ? 'Devolución transferida'
+            : settlement.kind === 'REFUND_PENDING'
+              ? `Devolver ${formatCLP(settlement.pendingAmount)}`
+              : 'Sin saldo';
+
+  const resultColorClass = !isConfirmed
+    ? fin.isSurplus
+      ? 'text-emerald-700'
+      : fin.isInsufficient
+        ? 'text-rose-700'
+        : 'text-slate-800'
+    : settlement.kind === 'RECEIVABLE_PAID' || settlement.kind === 'REFUND_TRANSFERRED' || settlement.kind === 'NO_BALANCE'
+      ? 'text-emerald-700'
+      : settlement.kind === 'RECEIVABLE_UNCOLLECTIBLE'
+        ? 'text-slate-700'
+        : settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL'
+          ? 'text-rose-700'
+          : 'text-emerald-700';
 
   const handleSaveNextManagement = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,12 +171,18 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           </div>
 
           <div className="p-4">
-            <span className="text-[9px] font-bold text-slate-400 uppercase block">{isConfirmed ? 'Resultado liquidación' : 'Resultado proyectado'}</span>
-            <strong className={`text-lg font-black ${fin.isSurplus ? 'text-emerald-700' : fin.isInsufficient ? 'text-rose-700' : 'text-slate-800'}`}>
+            <span className="text-[9px] font-bold text-slate-400 uppercase block">{isConfirmed ? 'Estado actual' : 'Resultado proyectado'}</span>
+            <strong className={`text-lg font-black ${resultColorClass}`}>
               {resultLabel}
             </strong>
-            {receivable && receivable.pendingBalance > 0 && (
-              <span className="text-[10px] text-rose-600 font-bold block">Saldo vigente {formatCLP(receivable.pendingBalance)}</span>
+            {(settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL') && (
+              <span className="text-[10px] text-rose-600 font-bold block">Pagado {formatCLP(settlement.paidAmount)} · saldo {formatCLP(settlement.pendingAmount)}</span>
+            )}
+            {settlement.kind === 'RECEIVABLE_PAID' && (
+              <span className="text-[10px] text-emerald-700 font-bold block">Pagado {formatCLP(settlement.paidAmount)} · saldo $0</span>
+            )}
+            {settlement.kind === 'RECEIVABLE_UNCOLLECTIBLE' && (
+              <span className="text-[10px] text-slate-500 font-bold block">Pagado {formatCLP(settlement.paidAmount)} · saldo dado por incobrable {formatCLP(settlement.pendingAmount)}</span>
             )}
           </div>
         </div>
