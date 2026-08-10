@@ -185,6 +185,9 @@ export interface Receivable {
   lastManagementDate: string;
   nextManagementDate: string;
   nextManagement: string;
+  uncollectibleReason?: string;
+  uncollectibleDate?: string;
+  uncollectibleUser?: string;
 }
 
 export interface PaymentAllocation {
