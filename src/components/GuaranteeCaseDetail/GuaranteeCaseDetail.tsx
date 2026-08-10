@@ -7,6 +7,7 @@ import { LiquidationTab } from './LiquidationTab';
 import { DocumentsHistoryTab } from './DocumentsHistoryTab';
 import { TenantLiquidationDocModal } from '../TenantLiquidationDocModal';
 import { OwnerLiquidationDocModal } from '../OwnerLiquidationDocModal';
+import { FullCoverageCaseBanner } from '../FullCoverageCaseBanner';
 import {
   ArrowLeft,
   LayoutDashboard,
@@ -29,7 +30,6 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
   const { cases, selectedCaseId, setSelectedCaseId, setActiveView, closeGuaranteeCase, reopenGuaranteeCase, userRole } = useApp();
 
   const [activeTab, setActiveTab] = useState<CaseTab>('summary');
-
   const [isTenantDocOpen, setIsTenantDocOpen] = useState(false);
   const [isOwnerDocOpen, setIsOwnerDocOpen] = useState(false);
   const [isCloseModalOpen, setIsCloseModalOpen] = useState(false);
@@ -155,29 +155,22 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
         </button>
       </div>
 
-      {activeTab === 'summary' && (
-        <SummaryTab guaranteeCase={guaranteeCase} />
-      )}
-
-      {activeTab === 'followUp' && (
-        <FollowUpTab guaranteeCase={guaranteeCase} />
-      )}
-
-      {activeTab === 'financials' && (
-        <ChargesAndCreditsTab guaranteeCase={guaranteeCase} />
-      )}
+      {activeTab === 'summary' && <SummaryTab guaranteeCase={guaranteeCase} />}
+      {activeTab === 'followUp' && <FollowUpTab guaranteeCase={guaranteeCase} />}
+      {activeTab === 'financials' && <ChargesAndCreditsTab guaranteeCase={guaranteeCase} />}
 
       {activeTab === 'liquidation' && (
-        <LiquidationTab
-          guaranteeCase={guaranteeCase}
-          onOpenTenantDoc={() => setIsTenantDocOpen(true)}
-          onOpenOwnerDoc={() => setIsOwnerDocOpen(true)}
-        />
+        <div className="space-y-5">
+          <FullCoverageCaseBanner />
+          <LiquidationTab
+            guaranteeCase={guaranteeCase}
+            onOpenTenantDoc={() => setIsTenantDocOpen(true)}
+            onOpenOwnerDoc={() => setIsOwnerDocOpen(true)}
+          />
+        </div>
       )}
 
-      {activeTab === 'archive' && (
-        <DocumentsHistoryTab guaranteeCase={guaranteeCase} />
-      )}
+      {activeTab === 'archive' && <DocumentsHistoryTab guaranteeCase={guaranteeCase} />}
 
       {isTenantDocOpen && (
         <TenantLiquidationDocModal
@@ -218,15 +211,9 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
 
             <div className="p-6 space-y-4">
               <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5">
-                <p className="text-slate-700">
-                  <strong>Propiedad:</strong> {guaranteeCase.propertyAddress}, {guaranteeCase.propertyUnit}
-                </p>
-                <p className="text-slate-700">
-                  <strong>Arrendatario:</strong> {guaranteeCase.tenantName}
-                </p>
-                <p className="text-slate-700">
-                  <strong>Propietario:</strong> {guaranteeCase.ownerName}
-                </p>
+                <p className="text-slate-700"><strong>Propiedad:</strong> {guaranteeCase.propertyAddress}, {guaranteeCase.propertyUnit}</p>
+                <p className="text-slate-700"><strong>Arrendatario:</strong> {guaranteeCase.tenantName}</p>
+                <p className="text-slate-700"><strong>Propietario:</strong> {guaranteeCase.ownerName}</p>
               </div>
 
               {pendingRepairs.length > 0 && (
