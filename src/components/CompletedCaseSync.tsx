@@ -1,15 +1,18 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatDate } from '../utils/formatters';
+import { formatCLP, formatDate } from '../utils/formatters';
+import { calculateFundingReadiness } from '../utils/calculations';
 
 /**
- * Keeps the operational state of completed/closed cases coherent.
- * - Any completed case is left ready only for the final "Cerrar caso" action.
- * - A closed case has no active blocker or pending next-management action.
- * - Unrelated blockers are preserved and are never cleared automatically.
+ * Mantiene coherentes los estados operativos después de resolver obligaciones.
+ * - Una cobranza pagada/incobrable deja de bloquear por arrendatario aunque todavía
+ *   exista otra acción posterior (por ejemplo, servicios pendientes del propietario).
+ * - Un caso completado queda listo únicamente para la acción final "Cerrar caso".
+ * - Un caso cerrado no conserva bloqueos ni próximas gestiones activas.
+ * - Bloqueos ajenos a la cobranza nunca se eliminan automáticamente.
  */
 export const CompletedCaseSync: React.FC = () => {
-  const { cases, updateGuaranteeCase } = useApp();
+  const { cases, settings, updateGuaranteeCase } = useApp();
 
   useEffect(() => {
     cases.forEach(c => {
@@ -33,6 +36,29 @@ export const CompletedCaseSync: React.FC = () => {
         return;
       }
 
+      const collectionResolved = c.receivableStatus === 'PAGADA' || c.receivableStatus === 'INCOBRABLE';
+      const today = formatDate(new Date().toISOString().split('T')[0]);
+
+      // "Bloqueado por Arrendatario" puede haber sido el bloqueo de la cobranza.
+      // Una vez resuelta, se limpia inmediatamente, sin esperar a que todo el caso complete.
+      if (collectionResolved && c.blockedBy === 'ARRENDATARIO') {
+        const readiness = calculateFundingReadiness(c, settings);
+        const nextManagement = c.isCompleted
+          ? 'Cerrar caso'
+          : readiness.ownerServicePending > 0
+            ? `Gestionar ${formatCLP(readiness.ownerServicePending)} de gastos comunes/servicios con propietario`
+            : 'Revisar pendientes para cierre del caso';
+
+        updateGuaranteeCase(c.id, {
+          blockedBy: 'SIN_BLOQUEO',
+          blockedReasonNotes: '',
+          nextManagement,
+          nextManagementDate: today,
+          nextManagementResponsible: c.responsible || ''
+        });
+        return;
+      }
+
       if (!c.isCompleted) return;
 
       const hasUnrelatedBlock = c.blockedBy !== 'SIN_BLOQUEO' && c.blockedBy !== 'ARRENDATARIO';
@@ -45,8 +71,6 @@ export const CompletedCaseSync: React.FC = () => {
 
       if (!needsCompletionCleanup) return;
 
-      const today = formatDate(new Date().toISOString().split('T')[0]);
-
       updateGuaranteeCase(c.id, {
         blockedBy: 'SIN_BLOQUEO',
         blockedReasonNotes: '',
@@ -55,7 +79,7 @@ export const CompletedCaseSync: React.FC = () => {
         nextManagementResponsible: c.responsible || ''
       });
     });
-  }, [cases, updateGuaranteeCase]);
+  }, [cases, settings, updateGuaranteeCase]);
 
   return null;
 };
