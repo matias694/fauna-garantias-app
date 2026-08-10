@@ -2,23 +2,17 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { SummaryTab } from './SummaryTab';
 import { FollowUpTab } from './FollowUpTab';
-import { RepairsTab } from './RepairsTab';
-import { ChargesTab } from './ChargesTab';
+import { ChargesAndCreditsTab } from './ChargesAndCreditsTab';
 import { LiquidationTab } from './LiquidationTab';
-import { MovementsTab } from './MovementsTab';
-import { HistoryTab } from './HistoryTab';
+import { DocumentsHistoryTab } from './DocumentsHistoryTab';
 import { TenantLiquidationDocModal } from '../TenantLiquidationDocModal';
 import { OwnerLiquidationDocModal } from '../OwnerLiquidationDocModal';
-import { DocumentsTab } from './DocumentsTab';
 import {
   ArrowLeft,
   LayoutDashboard,
   MessageSquare,
-  Wrench,
   DollarSign,
   FileCheck,
-  History,
-  Receipt,
   FileText,
   AlertTriangle,
   X,
@@ -29,10 +23,12 @@ interface GuaranteeCaseDetailProps {
   caseId?: string;
 }
 
+type CaseTab = 'summary' | 'followUp' | 'financials' | 'liquidation' | 'archive';
+
 export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId: propCaseId }) => {
   const { cases, selectedCaseId, setSelectedCaseId, setActiveView, closeGuaranteeCase, reopenGuaranteeCase, userRole } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'summary' | 'followUp' | 'repairs' | 'charges' | 'liquidation' | 'movements' | 'documents' | 'history'>('summary');
+  const [activeTab, setActiveTab] = useState<CaseTab>('summary');
 
   const [isTenantDocOpen, setIsTenantDocOpen] = useState(false);
   const [isOwnerDocOpen, setIsOwnerDocOpen] = useState(false);
@@ -68,10 +64,14 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
 
   const pendingRepairs = guaranteeCase.repairs.filter(r => r.status !== 'TERMINADA' && r.status !== 'CANCELADA');
 
+  const tabClass = (tab: CaseTab) => `px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+    activeTab === tab
+      ? 'bg-slate-900 text-white shadow-xs'
+      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+  }`;
+
   return (
     <div className="space-y-6">
-      
-      {/* CASE TITLE & NAVIGATION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3">
           <button
@@ -87,7 +87,7 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
               <span className="font-mono font-black text-slate-900 text-lg">{guaranteeCase.id}</span>
               <span className="text-slate-400 font-light">|</span>
               <h2 className="font-bold text-slate-800 text-base">{guaranteeCase.propertyAddress}, {guaranteeCase.propertyUnit}</h2>
-              
+
               {guaranteeCase.isCompleted && (
                 <span className="px-2.5 py-0.5 rounded-md bg-emerald-600 text-white font-black text-[10px] uppercase tracking-wide">
                   ✓ CASO COMPLETADO
@@ -106,7 +106,6 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
           </div>
         </div>
 
-        {/* TOP ACTIONS */}
         <div className="flex items-center gap-2">
           {!guaranteeCase.isClosed ? (
             <button
@@ -129,108 +128,33 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
         </div>
       </div>
 
-      {/* TABS NAVIGATION */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-slate-200">
-        
-        <button
-          onClick={() => setActiveTab('summary')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'summary'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
+        <button onClick={() => setActiveTab('summary')} className={tabClass('summary')}>
           <LayoutDashboard className="w-4 h-4" />
-          <span>Resumen Caso</span>
+          <span>Resumen</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('followUp')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'followUp'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
+        <button onClick={() => setActiveTab('followUp')} className={tabClass('followUp')}>
           <MessageSquare className="w-4 h-4 text-emerald-500" />
           <span>Seguimiento ({guaranteeCase.followUps?.length || 0})</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('repairs')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'repairs'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Wrench className="w-4 h-4" />
-          <span>Reparaciones Salida ({guaranteeCase.repairs.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('charges')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'charges'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
+        <button onClick={() => setActiveTab('financials')} className={tabClass('financials')}>
           <DollarSign className="w-4 h-4" />
-          <span>Cargos Garantía ({guaranteeCase.charges.length})</span>
+          <span>Cargos y abonos</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('liquidation')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'liquidation'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
+        <button onClick={() => setActiveTab('liquidation')} className={tabClass('liquidation')}>
           <FileCheck className="w-4 h-4 text-purple-400" />
-          <span>Requisitos y Liquidación</span>
+          <span>Liquidación</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('movements')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'movements'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <Receipt className="w-4 h-4" />
-          <span>Movimientos Financieros ({guaranteeCase.movements.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('documents')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'documents'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
+        <button onClick={() => setActiveTab('archive')} className={tabClass('archive')}>
           <FileText className="w-4 h-4" />
-          <span>Documentos ({guaranteeCase.attachments.length})</span>
+          <span>Documentos e historial</span>
         </button>
-
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-            activeTab === 'history'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Historial Sistema</span>
-        </button>
-
       </div>
 
-      {/* TAB CONTENT RENDER */}
       {activeTab === 'summary' && (
         <SummaryTab guaranteeCase={guaranteeCase} />
       )}
@@ -239,12 +163,8 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
         <FollowUpTab guaranteeCase={guaranteeCase} />
       )}
 
-      {activeTab === 'repairs' && (
-        <RepairsTab guaranteeCase={guaranteeCase} />
-      )}
-
-      {activeTab === 'charges' && (
-        <ChargesTab guaranteeCase={guaranteeCase} />
+      {activeTab === 'financials' && (
+        <ChargesAndCreditsTab guaranteeCase={guaranteeCase} />
       )}
 
       {activeTab === 'liquidation' && (
@@ -255,19 +175,10 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
         />
       )}
 
-      {activeTab === 'movements' && (
-        <MovementsTab guaranteeCase={guaranteeCase} />
+      {activeTab === 'archive' && (
+        <DocumentsHistoryTab guaranteeCase={guaranteeCase} />
       )}
 
-      {activeTab === 'documents' && (
-        <DocumentsTab guaranteeCase={guaranteeCase} />
-      )}
-
-      {activeTab === 'history' && (
-        <HistoryTab guaranteeCase={guaranteeCase} />
-      )}
-
-      {/* DOCUMENT MODALS */}
       {isTenantDocOpen && (
         <TenantLiquidationDocModal
           isOpen={isTenantDocOpen}
@@ -284,11 +195,9 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
         />
       )}
 
-      {/* CONFIRM CLOSE CASE MODAL */}
       {isCloseModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-200">
-            {/* Modal Header */}
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-slate-800 rounded-xl">
@@ -307,7 +216,6 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6 space-y-4">
               <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5">
                 <p className="text-slate-700">
@@ -326,7 +234,7 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                   <div>
                     <strong className="font-bold block mb-0.5">Reparaciones Pendientes ({pendingRepairs.length})</strong>
-                    <p>No es posible cerrar el caso mientras existan trabajos pendientes o en ejecución. Por favor finalícelos o cancélelos en la pestaña Reparaciones.</p>
+                    <p>No es posible cerrar el caso mientras existan trabajos pendientes o en ejecución. Revísalos en Cargos y abonos &gt; Reparaciones.</p>
                   </div>
                 </div>
               )}
@@ -342,7 +250,6 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
               </p>
             </div>
 
-            {/* Modal Footer */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3">
               <button
                 type="button"
@@ -368,7 +275,6 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
           </div>
         </div>
       )}
-
     </div>
   );
 };
