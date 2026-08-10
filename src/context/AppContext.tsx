@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   GuaranteeCase,
   Receivable,
@@ -20,19 +20,26 @@ import {
 } from '../types';
 import { initialGuaranteeCases, initialReceivables, initialSettings, defaultRequirements } from '../data/initialData';
 import { addDaysToDate, formatDate } from '../utils/formatters';
-import { calculateGuaranteeFinances, calculatePaymentDistribution } from '../utils/calculations';
+import {
+  calculateFundingReadiness,
+  calculateGuaranteeFinances,
+  calculatePaymentDistribution
+} from '../utils/calculations';
 
-export function isCaseCompleted(c: GuaranteeCase): boolean {
+export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = initialSettings): boolean {
   if (c.liquidationStatus !== 'EMITIDA') return false;
   if (c.preparationStatus !== 'LISTA') return false;
 
-  if (c.refund && c.refund.amount > 0 && c.refund.status !== 'TRANSFERIDA') {
-    return false;
-  }
+  if (c.refund && c.refund.amount > 0 && c.refund.status !== 'TRANSFERIDA') return false;
 
   if (c.receivableStatus && c.receivableStatus !== 'PAGADA' && c.receivableStatus !== 'INCOBRABLE') {
     return false;
   }
+
+  // Los servicios/GC pueden quedar pendientes al emitir la liquidación, pero el caso
+  // no se considera completamente cerrado mientras esa obligación siga vigente.
+  const readiness = calculateFundingReadiness(c, settings);
+  if (readiness.ownerServicePending > 0) return false;
 
   return true;
 }
@@ -76,7 +83,8 @@ interface AppContextType {
   registerTenantRefund: (caseId: string, refundData: { date: string; voucherName?: string; destinationAccount?: string; notes?: string }) => void;
 
   createReceivableFromCase: (caseId: string) => Receivable | null;
-  recordTenantPayment: (receivableId: string, paymentAmount: number, notes: string) => void;
+  recordTenantPayment: (receivableId: string, paymentAmount: number, notes: string, paymentDate?: string) => void;
+  markReceivableUncollectible: (receivableId: string, reason: string) => void;
 
   closeGuaranteeCase: (caseId: string) => { success: boolean; message: string };
   reopenGuaranteeCase: (caseId: string) => void;
@@ -96,19 +104,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem('fauna_guarantee_cases_v2');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((c: GuaranteeCase) => ({
-          ...c,
-          isCompleted: isCaseCompleted(c)
-        }));
+        return JSON.parse(saved).map((c: GuaranteeCase) => ({ ...c, isCompleted: isCaseCompleted(c) }));
       } catch (e) {
         console.error(e);
       }
     }
-    return initialGuaranteeCases.map(c => ({
-      ...c,
-      isCompleted: isCaseCompleted(c)
-    }));
+    return initialGuaranteeCases.map(c => ({ ...c, isCompleted: isCaseCompleted(c) }));
   });
 
   const [receivables, setReceivables] = useState<Receivable[]>(() => {
@@ -135,21 +136,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [];
   });
 
-  useEffect(() => {
-    localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(cases));
-  }, [cases]);
+  useEffect(() => localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(cases)), [cases]);
+  useEffect(() => localStorage.setItem('fauna_receivables_v2', JSON.stringify(receivables)), [receivables]);
+  useEffect(() => localStorage.setItem('fauna_settings_v2', JSON.stringify(settings)), [settings]);
+  useEffect(() => localStorage.setItem('fauna_audit_logs_v2', JSON.stringify(auditLogs)), [auditLogs]);
 
-  useEffect(() => {
-    localStorage.setItem('fauna_receivables_v2', JSON.stringify(receivables));
-  }, [receivables]);
-
-  useEffect(() => {
-    localStorage.setItem('fauna_settings_v2', JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    localStorage.setItem('fauna_audit_logs_v2', JSON.stringify(auditLogs));
-  }, [auditLogs]);
+  const withCompletion = (c: GuaranteeCase): GuaranteeCase => ({ ...c, isCompleted: isCaseCompleted(c, settings) });
 
   const logAudit = (caseId: string, action: string, detail: string) => {
     const newLog: AuditLog = {
@@ -157,6 +149,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       caseId,
       timestamp: new Date().toLocaleString('es-CL'),
       user: userRole,
+      actorRole: userRole,
       action,
       detail
     };
@@ -166,9 +159,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createGuaranteeCase = (
     caseData: Omit<GuaranteeCase, 'id' | 'deadlineDate' | 'alertDate' | 'repairs' | 'charges' | 'attachments' | 'movements' | 'ownerContribution' | 'fullCoverageApplied' | 'faunaFinancing' | 'requirements' | 'followUps' | 'isClosed'>
   ): GuaranteeCase => {
-    const nextNumber = cases.length + 1;
-    const formattedId = `GAR-${String(nextNumber).padStart(4, '0')}`;
-
+    const formattedId = `GAR-${String(cases.length + 1).padStart(4, '0')}`;
     const deadlineDate = addDaysToDate(caseData.receptionDate, settings.maxLiquidationDays || 60);
     const alertDate = addDaysToDate(caseData.receptionDate, settings.alertDay || 45);
 
@@ -185,7 +176,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       observation: caseData.initialNotes || 'Garantía registrada al recibir propiedad'
     };
 
-    const newCase: GuaranteeCase = {
+    const newCase = withCompletion({
       ...caseData,
       id: formattedId,
       deadlineDate,
@@ -203,9 +194,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       fullCoverageApplied: 0,
       faunaFinancing: 0,
       isClosed: false
-    };
-
-    newCase.isCompleted = isCaseCompleted(newCase);
+    });
 
     setCases(prev => [newCase, ...prev]);
     logAudit(formattedId, 'Creación de Caso', `Caso ${formattedId} creado para propiedad ${caseData.propertyAddress}`);
@@ -213,34 +202,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateGuaranteeCase = (caseId: string, updates: Partial<GuaranteeCase>) => {
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = { ...c, ...updates };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, ...updates }) : c));
     logAudit(caseId, 'Actualización de Caso', `Actualizados datos del caso ${caseId}`);
   };
 
   const changePreparationStatus = (caseId: string, newStatus: PreparationStatus) => {
     const todayStr = formatDate(new Date().toISOString().split('T')[0]);
     setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const isNowReady = newStatus === 'LISTA';
-        const readyDate = isNowReady ? todayStr : c.preparationReadyDate;
-        const updated = {
-          ...c,
-          preparationStatus: newStatus,
-          preparationReadyDate: readyDate
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
+      if (c.id !== caseId) return c;
+      return withCompletion({
+        ...c,
+        preparationStatus: newStatus,
+        preparationReadyDate: newStatus === 'LISTA' ? todayStr : c.preparationReadyDate
+      });
     }));
-
     logAudit(caseId, 'Preparación Actualizada', `${userRole} cambió Preparación de propiedad a ${newStatus}`);
   };
 
@@ -248,74 +223,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     caseId: string,
     newStatus: LiquidationStatus,
     blockedBy: BlockedByReason = 'SIN_BLOQUEO',
-    blockedNotes: string = ''
+    blockedNotes = ''
   ) => {
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          liquidationStatus: newStatus,
-          blockedBy,
-          blockedReasonNotes: blockedNotes
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      liquidationStatus: newStatus,
+      blockedBy,
+      blockedReasonNotes: blockedNotes
+    }) : c));
     logAudit(caseId, 'Estado Liquidación Cambiado', `${userRole} cambió Liquidación a ${newStatus} (Bloqueo: ${blockedBy})`);
   };
 
   const updateRequirementStatus = (caseId: string, requirementId: string, status: RequirementStatus, notes?: string) => {
     setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updatedReqs = c.requirements.map(req => req.id === requirementId ? { ...req, status, notes: notes !== undefined ? notes : req.notes } : req);
-        const allDone = updatedReqs.every(r => r.status === 'COMPLETO' || r.status === 'NO_APLICA');
-        let newLiqStatus = c.liquidationStatus;
-
-        if (allDone && c.liquidationStatus === 'EN_PREPARACION') {
-          newLiqStatus = 'LISTA';
-        } else if (!allDone && c.liquidationStatus === 'LISTA') {
-          newLiqStatus = 'EN_PREPARACION';
-        }
-
-        const updated = {
-          ...c,
-          requirements: updatedReqs,
-          liquidationStatus: newLiqStatus
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
+      if (c.id !== caseId) return c;
+      const updatedReqs = c.requirements.map(req => req.id === requirementId
+        ? { ...req, status, notes: notes !== undefined ? notes : req.notes }
+        : req
+      );
+      const allDone = updatedReqs.every(r => r.status === 'COMPLETO' || r.status === 'NO_APLICA');
+      const liquidationStatus = allDone && c.liquidationStatus === 'EN_PREPARACION'
+        ? 'LISTA'
+        : !allDone && c.liquidationStatus === 'LISTA'
+          ? 'EN_PREPARACION'
+          : c.liquidationStatus;
+      return withCompletion({ ...c, requirements: updatedReqs, liquidationStatus });
     }));
-
     logAudit(caseId, 'Requisito Actualizado', `Requisito ${requirementId} marcado como ${status}`);
   };
 
   const addRequirement = (caseId: string, name: string) => {
-    const newReq: LiquidationRequirement = {
-      id: 'REQ-' + Date.now(),
-      name,
-      status: 'PENDIENTE'
-    };
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updatedReqs = [...c.requirements, newReq];
-        const newLiqStatus = c.liquidationStatus === 'LISTA' ? 'EN_PREPARACION' : c.liquidationStatus;
-        const updated = {
-          ...c,
-          requirements: updatedReqs,
-          liquidationStatus: newLiqStatus
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
+    const newReq: LiquidationRequirement = { id: 'REQ-' + Date.now(), name, status: 'PENDIENTE' };
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      requirements: [...c.requirements, newReq],
+      liquidationStatus: c.liquidationStatus === 'LISTA' ? 'EN_PREPARACION' : c.liquidationStatus
+    }) : c));
     logAudit(caseId, 'Requisito Añadido', `Nuevo requisito de liquidación: "${name}"`);
   };
 
@@ -330,105 +273,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       comment: data.comment,
       area: data.area,
       user: userRole,
+      userRole,
       createdAt: nowStr,
       nextManagement: data.nextManagement,
       nextManagementDate: data.nextManagementDate,
       nextManagementResponsible: data.nextManagementResponsible
     };
 
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          followUps: [newComment, ...c.followUps],
-          nextManagement: data.nextManagement !== undefined ? data.nextManagement : c.nextManagement,
-          nextManagementDate: data.nextManagementDate !== undefined ? data.nextManagementDate : c.nextManagementDate,
-          nextManagementResponsible: data.nextManagementResponsible !== undefined ? data.nextManagementResponsible : c.nextManagementResponsible
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      followUps: [newComment, ...c.followUps],
+      nextManagement: data.nextManagement !== undefined ? data.nextManagement : c.nextManagement,
+      nextManagementDate: data.nextManagementDate !== undefined ? data.nextManagementDate : c.nextManagementDate,
+      nextManagementResponsible: data.nextManagementResponsible !== undefined ? data.nextManagementResponsible : c.nextManagementResponsible
+    }) : c));
 
     logAudit(caseId, 'Seguimiento Registrado', `Comentario [${data.area}] añadido por ${userRole}`);
   };
 
   const addExitRepair = (caseId: string, repairData: Omit<ExitRepair, 'id'>) => {
-    const repairId = 'REP-' + Date.now();
-    const newRepair: ExitRepair = {
-      ...repairData,
-      id: repairId
-    };
-
+    const newRepair: ExitRepair = { ...repairData, id: 'REP-' + Date.now() };
     setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const newRepairs = [...c.repairs, newRepair];
-        const allFinished = newRepairs.length > 0 && newRepairs.every(r => r.status === 'TERMINADA' || r.status === 'CANCELADA');
-        const isNowReady = allFinished && c.preparationStatus !== 'LISTA';
-        const readyDate = isNowReady ? formatDate(new Date().toISOString().split('T')[0]) : c.preparationReadyDate;
-
-        const updated = {
-          ...c,
-          repairs: newRepairs,
-          preparationStatus: allFinished ? ('LISTA' as PreparationStatus) : c.preparationStatus,
-          preparationReadyDate: readyDate
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
+      if (c.id !== caseId) return c;
+      const repairs = [...c.repairs, newRepair];
+      const allFinished = repairs.length > 0 && repairs.every(r => r.status === 'TERMINADA' || r.status === 'CANCELADA');
+      return withCompletion({
+        ...c,
+        repairs,
+        preparationStatus: allFinished ? 'LISTA' : c.preparationStatus,
+        preparationReadyDate: allFinished && c.preparationStatus !== 'LISTA'
+          ? formatDate(new Date().toISOString().split('T')[0])
+          : c.preparationReadyDate
+      });
     }));
-
     logAudit(caseId, 'Reparación Creada', `Reparación "${repairData.description}" registrada`);
   };
 
   const updateExitRepair = (caseId: string, repairId: string, updates: Partial<ExitRepair>) => {
     setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updatedRepairs = c.repairs.map(r => r.id === repairId ? { ...r, ...updates } : r);
-        const allFinished = updatedRepairs.length > 0 && updatedRepairs.every(r => r.status === 'TERMINADA' || r.status === 'CANCELADA');
-        const isNowReady = allFinished && c.preparationStatus !== 'LISTA';
-        const readyDate = isNowReady ? formatDate(new Date().toISOString().split('T')[0]) : c.preparationReadyDate;
-
-        const updated = {
-          ...c,
-          repairs: updatedRepairs,
-          preparationStatus: allFinished ? ('LISTA' as PreparationStatus) : c.preparationStatus,
-          preparationReadyDate: readyDate
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
+      if (c.id !== caseId) return c;
+      const repairs = c.repairs.map(r => r.id === repairId ? { ...r, ...updates } : r);
+      const allFinished = repairs.length > 0 && repairs.every(r => r.status === 'TERMINADA' || r.status === 'CANCELADA');
+      return withCompletion({
+        ...c,
+        repairs,
+        preparationStatus: allFinished ? 'LISTA' : c.preparationStatus,
+        preparationReadyDate: allFinished && c.preparationStatus !== 'LISTA'
+          ? formatDate(new Date().toISOString().split('T')[0])
+          : c.preparationReadyDate
+      });
     }));
-
     logAudit(caseId, 'Reparación Actualizada', `Reparación ${repairId} actualizada`);
   };
 
   const deleteExitRepair = (caseId: string, repairId: string) => {
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const filteredRepairs = c.repairs.filter(r => r.id !== repairId);
-        const updated = {
-          ...c,
-          repairs: filteredRepairs
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, repairs: c.repairs.filter(r => r.id !== repairId) }) : c));
     logAudit(caseId, 'Reparación Eliminada', `Reparación ${repairId} eliminada`);
   };
 
   const addCharge = (caseId: string, chargeData: Omit<Charge, 'id'>) => {
     const chargeId = 'CHG-' + Date.now();
-    const newCharge: Charge = {
-      ...chargeData,
-      id: chargeId
-    };
-
+    const newCharge: Charge = { ...chargeData, id: chargeId };
     const newMovement: FinancialMovement = {
       id: 'MOV-' + Date.now(),
       caseId,
@@ -442,187 +347,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       observation: chargeData.notes || 'Cargo ingresado al caso'
     };
 
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          charges: [...c.charges, newCharge],
-          movements: [...c.movements, newMovement]
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      charges: [...c.charges, newCharge],
+      movements: [...c.movements, newMovement]
+    }) : c));
     logAudit(caseId, 'Cargo Creado', `Cargo "${chargeData.description}" por $${chargeData.amount} añadido`);
   };
 
   const updateCharge = (caseId: string, chargeId: string, updates: Partial<Charge>) => {
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updatedCharges = c.charges.map(ch => ch.id === chargeId ? { ...ch, ...updates } : ch);
-        const updated = {
-          ...c,
-          charges: updatedCharges
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      charges: c.charges.map(ch => ch.id === chargeId ? { ...ch, ...updates } : ch)
+    }) : c));
     logAudit(caseId, 'Cargo Actualizado', `Cargo ${chargeId} actualizado`);
   };
 
   const deleteCharge = (caseId: string, chargeId: string) => {
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          charges: c.charges.filter(ch => ch.id !== chargeId)
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, charges: c.charges.filter(ch => ch.id !== chargeId) }) : c));
     logAudit(caseId, 'Cargo Eliminado', `Cargo ${chargeId} eliminado`);
   };
 
   const addFinancialMovement = (caseId: string, movementData: Omit<FinancialMovement, 'id' | 'caseId'>) => {
-    const movId = 'MOV-' + Date.now();
-    const newMov: FinancialMovement = {
-      ...movementData,
-      id: movId,
-      caseId
-    };
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          movements: [...c.movements, newMov]
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
+    const newMovement: FinancialMovement = { ...movementData, id: 'MOV-' + Date.now(), caseId };
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, movements: [...c.movements, newMovement] }) : c));
     logAudit(caseId, 'Movimiento Financiero', `Movimiento ${movementData.type}: ${movementData.description} ($${movementData.amount})`);
   };
 
   const addAttachment = (caseId: string, attachmentData: Omit<CaseAttachment, 'id'>) => {
-    const attId = 'ATT-' + Date.now();
-    const newAtt: CaseAttachment = {
-      ...attachmentData,
-      id: attId
-    };
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          attachments: [...c.attachments, newAtt]
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
+    const attachment: CaseAttachment = { ...attachmentData, id: 'ATT-' + Date.now() };
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, attachments: [...c.attachments, attachment] }) : c));
     logAudit(caseId, 'Documento Adjuntado', `Archivo ${attachmentData.name} adjuntado`);
-  };
-
-  const emitLiquidation = (caseId: string) => {
-    const targetCase = cases.find(c => c.id === caseId);
-    if (!targetCase) return;
-    if (targetCase.liquidationStatus !== 'LISTA') return;
-
-    const fin = calculateGuaranteeFinances(targetCase, settings);
-    let refund = targetCase.refund;
-    let recId = targetCase.receivableId;
-    let recStatus = targetCase.receivableStatus;
-
-    if (fin.isSurplus) {
-      refund = {
-        amount: fin.refundToTenant,
-        status: 'PENDIENTE',
-        destinationAccount: 'Pendiente de registrar por usuario',
-        notes: 'Monto a devolver al arrendatario'
-      };
-    } else if (fin.isInsufficient) {
-      const rec = createReceivableFromCase(caseId);
-      if (rec) {
-        recId = rec.id;
-        recStatus = rec.status;
-      }
-    }
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          liquidationStatus: 'EMITIDA' as LiquidationStatus,
-          refund,
-          receivableId: recId,
-          receivableStatus: recStatus
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
-    logAudit(caseId, 'Emisión de Liquidación', `Liquidación de garantía emitida formalmente por ${userRole}`);
-  };
-
-  const registerTenantRefund = (
-    caseId: string,
-    refundData: { date: string; voucherName?: string; destinationAccount?: string; notes?: string }
-  ) => {
-    const targetCase = cases.find(c => c.id === caseId);
-    if (!targetCase || !targetCase.refund) return;
-
-    const refundAmount = targetCase.refund.amount;
-
-    const newMovement: FinancialMovement = {
-      id: 'MOV-' + Date.now(),
-      caseId,
-      date: formatDate(refundData.date || new Date().toISOString().split('T')[0]),
-      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-      type: 'DEVOLUCION_ARRENDATARIO',
-      description: `Devolución de garantía a arrendatario (${targetCase.tenantName})`,
-      amount: -refundAmount,
-      user: userRole,
-      reference: refundData.voucherName || 'COMPROBANTE-DEV',
-      observation: refundData.notes || 'Transferencia de saldo a favor efectuada'
-    };
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId && c.refund) {
-        const updatedRefund: TenantRefund = {
-          ...c.refund,
-          status: 'TRANSFERIDA',
-          date: refundData.date,
-          voucherName: refundData.voucherName,
-          destinationAccount: refundData.destinationAccount || c.refund.destinationAccount,
-          notes: refundData.notes,
-          user: userRole
-        };
-
-        const updated = {
-          ...c,
-          refund: updatedRefund,
-          movements: [...c.movements, newMovement]
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
-    logAudit(caseId, 'Devolución Transferida', `Registrada transferencia de $${refundAmount} a arrendatario`);
   };
 
   const createReceivableFromCase = (caseId: string): Receivable | null => {
@@ -632,14 +387,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = receivables.find(r => r.caseId === caseId);
     if (existing) return existing;
 
-    const totalCharges = targetCase.charges.reduce((acc, curr) => acc + curr.amount, 0);
-    const deficit = Math.max(0, totalCharges - targetCase.guaranteeAmount);
-
+    const fin = calculateGuaranteeFinances(targetCase, settings);
+    const deficit = fin.tenantReceivableAmount;
     if (deficit <= 0) return null;
 
     const newRecId = `REC-${String(receivables.length + 1).padStart(4, '0')}`;
     const today = formatDate(new Date().toISOString().split('T')[0]);
-
     const newReceivable: Receivable = {
       id: newRecId,
       caseId,
@@ -662,132 +415,173 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setReceivables(prev => [newReceivable, ...prev]);
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          receivableId: newRecId,
-          receivableStatus: 'PENDIENTE' as Receivable['status']
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      receivableId: newRecId,
+      receivableStatus: 'PENDIENTE'
+    }) : c));
 
     logAudit(caseId, 'Cuenta por Cobrar Creada', `Generada cuenta por cobrar ${newRecId} por $${deficit}`);
     return newReceivable;
   };
 
-  const recordTenantPayment = (receivableId: string, paymentAmount: number, notes: string) => {
+  const emitLiquidation = (caseId: string) => {
+    const targetCase = cases.find(c => c.id === caseId);
+    if (!targetCase || targetCase.liquidationStatus !== 'LISTA') return;
+
+    const fin = calculateGuaranteeFinances(targetCase, settings);
+    let refund = targetCase.refund;
+    let receivableId = targetCase.receivableId;
+    let receivableStatus = targetCase.receivableStatus;
+
+    if (fin.isSurplus) {
+      refund = {
+        amount: fin.refundToTenant,
+        status: 'PENDIENTE',
+        destinationAccount: 'Pendiente de registrar por usuario',
+        notes: 'Monto a devolver al arrendatario'
+      };
+    } else if (fin.isInsufficient) {
+      const rec = createReceivableFromCase(caseId);
+      if (rec) {
+        receivableId = rec.id;
+        receivableStatus = rec.status;
+      }
+    }
+
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      liquidationStatus: 'EMITIDA',
+      refund,
+      receivableId,
+      receivableStatus
+    }) : c));
+
+    logAudit(caseId, 'Emisión de Liquidación', `Liquidación de garantía emitida formalmente por ${userRole}`);
+  };
+
+  const registerTenantRefund = (
+    caseId: string,
+    refundData: { date: string; voucherName?: string; destinationAccount?: string; notes?: string }
+  ) => {
+    const targetCase = cases.find(c => c.id === caseId);
+    if (!targetCase?.refund) return;
+
+    const refundAmount = targetCase.refund.amount;
+    const movement: FinancialMovement = {
+      id: 'MOV-' + Date.now(),
+      caseId,
+      date: formatDate(refundData.date || new Date().toISOString().split('T')[0]),
+      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+      type: 'DEVOLUCION_ARRENDATARIO',
+      description: `Devolución de garantía a arrendatario (${targetCase.tenantName})`,
+      amount: -refundAmount,
+      user: userRole,
+      reference: refundData.voucherName || 'COMPROBANTE-DEV',
+      observation: refundData.notes || 'Transferencia de saldo a favor efectuada'
+    };
+
+    setCases(prev => prev.map(c => {
+      if (c.id !== caseId || !c.refund) return c;
+      const updatedRefund: TenantRefund = {
+        ...c.refund,
+        status: 'TRANSFERIDA',
+        date: refundData.date,
+        voucherName: refundData.voucherName,
+        destinationAccount: refundData.destinationAccount || c.refund.destinationAccount,
+        notes: refundData.notes,
+        user: userRole
+      };
+      return withCompletion({ ...c, refund: updatedRefund, movements: [...c.movements, movement] });
+    }));
+
+    logAudit(caseId, 'Devolución Transferida', `Registrada transferencia de $${refundAmount} a arrendatario`);
+  };
+
+  const recordTenantPayment = (receivableId: string, paymentAmount: number, notes: string, paymentDate?: string) => {
     const targetRec = receivables.find(r => r.id === receivableId);
     if (!targetRec || paymentAmount <= 0 || paymentAmount > targetRec.pendingBalance) return;
 
-    const dist = calculatePaymentDistribution(
-      paymentAmount,
-      targetRec.ownerContributionToRecover,
-      targetRec.faunaFinancingToRecover
-    );
+    const targetCase = cases.find(c => c.id === targetRec.caseId);
+    const ownerToRecover = targetCase ? Math.max(0, targetCase.ownerContribution || 0) : targetRec.ownerContributionToRecover;
+    const faunaToRecover = targetCase ? Math.max(0, targetCase.faunaFinancing || 0) : targetRec.faunaFinancingToRecover;
+    const dist = calculatePaymentDistribution(paymentAmount, ownerToRecover, faunaToRecover);
 
-    const todayStr = formatDate(new Date().toISOString().split('T')[0]);
-    const nowTimeStr = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = formatDate(paymentDate || new Date().toISOString().split('T')[0]);
+    const timeStr = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
     const newPending = Math.max(0, targetRec.pendingBalance - paymentAmount);
-    const newRecStatus: Receivable['status'] = newPending <= 0 ? 'PAGADA' : 'PAGO_PARCIAL';
+    const newStatus: Receivable['status'] = newPending <= 0 ? 'PAGADA' : 'PAGO_PARCIAL';
 
-    setReceivables(prev => prev.map(r => {
-      if (r.id === receivableId) {
-        return {
-          ...r,
-          totalPaid: r.totalPaid + paymentAmount,
-          pendingBalance: newPending,
-          ownerContributionToRecover: dist.remainingOwnerContribution,
-          faunaFinancingToRecover: dist.remainingFaunaFinancing,
-          status: newRecStatus,
-          lastManagementDate: todayStr
-        };
-      }
-      return r;
-    }));
+    setReceivables(prev => prev.map(r => r.id === receivableId ? {
+      ...r,
+      totalPaid: r.totalPaid + paymentAmount,
+      pendingBalance: newPending,
+      ownerContributionToRecover: dist.remainingOwnerContribution,
+      faunaFinancingToRecover: dist.remainingFaunaFinancing,
+      status: newStatus,
+      lastManagementDate: dateStr
+    } : r));
 
     const caseId = targetRec.caseId;
-    const movementsToAdd: FinancialMovement[] = [];
-
-    movementsToAdd.push({
+    const movements: FinancialMovement[] = [{
       id: 'MOV-' + Date.now() + '-1',
       caseId,
-      date: todayStr,
-      time: nowTimeStr,
+      date: dateStr,
+      time: timeStr,
       type: 'PAGO_ARRENDATARIO',
       description: `Pago abonado por arrendatario (${targetRec.tenantName})`,
       amount: paymentAmount,
       user: userRole,
       reference: receivableId,
       observation: notes || 'Abono a cuenta por cobrar'
+    }];
+
+    if (dist.ownerRecovery > 0) movements.push({
+      id: 'MOV-' + Date.now() + '-2',
+      caseId,
+      date: dateStr,
+      time: timeStr,
+      type: 'RECUPERACION_PROPIETARIO',
+      description: `Recuperación de aporte de propietario (${targetRec.ownerName})`,
+      amount: dist.ownerRecovery,
+      user: userRole,
+      reference: `RECUP-PROP-${receivableId}`,
+      observation: 'Distribución automática: prioridad propietario'
     });
 
-    if (dist.ownerRecovery > 0) {
-      movementsToAdd.push({
-        id: 'MOV-' + Date.now() + '-2',
-        caseId,
-        date: todayStr,
-        time: nowTimeStr,
-        type: 'RECUPERACION_PROPIETARIO',
-        description: `Recuperación de aporte de propietario (${targetRec.ownerName})`,
-        amount: dist.ownerRecovery,
-        user: userRole,
-        reference: `RECUP-PROP-${receivableId}`,
-        observation: 'Distribución automática: prioridad propietario'
-      });
-    }
+    if (dist.faunaRecovery > 0) movements.push({
+      id: 'MOV-' + Date.now() + '-3',
+      caseId,
+      date: dateStr,
+      time: timeStr,
+      type: 'RECUPERACION_FAUNA',
+      description: 'Recuperación de financiamiento operativo Fauna',
+      amount: dist.faunaRecovery,
+      user: userRole,
+      reference: `RECUP-FAUNA-${receivableId}`,
+      observation: 'Distribución automática: prioridad Fauna después del propietario'
+    });
 
-    if (dist.faunaRecovery > 0) {
-      movementsToAdd.push({
-        id: 'MOV-' + Date.now() + '-3',
-        caseId,
-        date: todayStr,
-        time: nowTimeStr,
-        type: 'RECUPERACION_FAUNA',
-        description: 'Recuperación de financiamiento operativo Fauna',
-        amount: dist.faunaRecovery,
-        user: userRole,
-        reference: `RECUP-FAUNA-${receivableId}`,
-        observation: 'Distribución automática: prioridad Fauna después del propietario'
-      });
-    }
+    if (dist.surplusPayment > 0) movements.push({
+      id: 'MOV-' + Date.now() + '-4',
+      caseId,
+      date: dateStr,
+      time: timeStr,
+      type: 'SALDO_PAGO_ARRENDATARIO',
+      description: 'Saldo de pago aplicado a deuda del arrendatario',
+      amount: dist.surplusPayment,
+      user: userRole,
+      reference: `SALDO-${receivableId}`,
+      observation: 'Parte del pago que no corresponde a recuperar aporte propietario ni financiamiento Fauna'
+    });
 
-    if (dist.surplusPayment > 0) {
-      movementsToAdd.push({
-        id: 'MOV-' + Date.now() + '-4',
-        caseId,
-        date: todayStr,
-        time: nowTimeStr,
-        type: 'SALDO_PAGO_ARRENDATARIO',
-        description: 'Saldo de pago aplicado a deuda del arrendatario',
-        amount: dist.surplusPayment,
-        user: userRole,
-        reference: `SALDO-${receivableId}`,
-        observation: 'Parte del pago que no corresponde a recuperar aporte propietario ni financiamiento Fauna'
-      });
-    }
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const newOwnerContrib = Math.max(0, c.ownerContribution - dist.ownerRecovery);
-        const newFaunaFinancing = Math.max(0, c.faunaFinancing - dist.faunaRecovery);
-
-        const updated = {
-          ...c,
-          ownerContribution: newOwnerContrib,
-          faunaFinancing: newFaunaFinancing,
-          movements: [...c.movements, ...movementsToAdd],
-          receivableStatus: newRecStatus
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      ownerContribution: Math.max(0, (c.ownerContribution || 0) - dist.ownerRecovery),
+      faunaFinancing: Math.max(0, (c.faunaFinancing || 0) - dist.faunaRecovery),
+      movements: [...c.movements, ...movements],
+      receivableStatus: newStatus
+    }) : c));
 
     logAudit(
       caseId,
@@ -796,36 +590,61 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const markReceivableUncollectible = (receivableId: string, reason: string) => {
+    const targetRec = receivables.find(r => r.id === receivableId);
+    if (!targetRec || !reason.trim() || targetRec.status === 'PAGADA' || targetRec.status === 'INCOBRABLE') return;
+
+    const today = formatDate(new Date().toISOString().split('T')[0]);
+    setReceivables(prev => prev.map(r => r.id === receivableId ? {
+      ...r,
+      status: 'INCOBRABLE',
+      lastManagementDate: today,
+      nextManagement: '',
+      nextManagementDate: '',
+      ownerContributionToRecover: 0,
+      faunaFinancingToRecover: 0,
+      uncollectibleReason: reason.trim(),
+      uncollectibleDate: today,
+      uncollectibleUser: userRole
+    } : r));
+
+    setCases(prev => prev.map(c => c.id === targetRec.caseId ? withCompletion({
+      ...c,
+      receivableStatus: 'INCOBRABLE',
+      ownerContribution: 0,
+      faunaFinancing: 0,
+      nextManagement: '',
+      nextManagementDate: ''
+    }) : c));
+
+    logAudit(
+      targetRec.caseId,
+      'Cuenta por Cobrar Marcada Incobrable',
+      `${targetRec.id} · saldo ${targetRec.pendingBalance} · motivo: ${reason.trim()}`
+    );
+  };
+
   const closeGuaranteeCase = (caseId: string): { success: boolean; message: string } => {
     const targetCase = cases.find(c => c.id === caseId);
     if (!targetCase) return { success: false, message: 'Caso no encontrado.' };
 
-    if (!isCaseCompleted(targetCase)) {
+    if (!isCaseCompleted(targetCase, settings)) {
       const pending: string[] = [];
       if (targetCase.preparationStatus !== 'LISTA') pending.push('preparación física');
       if (targetCase.liquidationStatus !== 'EMITIDA') pending.push('liquidación emitida');
       if (targetCase.refund && targetCase.refund.amount > 0 && targetCase.refund.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
       if (targetCase.receivableStatus && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
-
-      return {
-        success: false,
-        message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.`
-      };
+      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0) pending.push('gastos comunes/servicios pendientes del propietario');
+      return { success: false, message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.` };
     }
 
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        return {
-          ...c,
-          isClosed: true,
-          closedAt: new Date().toLocaleString('es-CL'),
-          closedBy: userRole,
-          isCompleted: true
-        };
-      }
-      return c;
-    }));
-
+    setCases(prev => prev.map(c => c.id === caseId ? {
+      ...c,
+      isClosed: true,
+      closedAt: new Date().toLocaleString('es-CL'),
+      closedBy: userRole,
+      isCompleted: true
+    } : c));
     logAudit(caseId, 'Cierre de Caso', `Caso ${caseId} cerrado por ${userRole}`);
     return { success: true, message: 'Caso cerrado con éxito.' };
   };
@@ -835,19 +654,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       alert('Solo un Administrador puede reabrir un caso cerrado.');
       return;
     }
-
-    setCases(prev => prev.map(c => {
-      if (c.id === caseId) {
-        const updated = {
-          ...c,
-          isClosed: false
-        };
-        updated.isCompleted = isCaseCompleted(updated);
-        return updated;
-      }
-      return c;
-    }));
-
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, isClosed: false }) : c));
     logAudit(caseId, 'Reapertura de Caso', `Caso ${caseId} reabierto por Administrador`);
   };
 
@@ -857,43 +664,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider
-      value={{
-        userRole,
-        setUserRole,
-        activeView,
-        setActiveView,
-        selectedCaseId,
-        setSelectedCaseId,
-        cases,
-        receivables,
-        settings,
-        auditLogs,
-        createGuaranteeCase,
-        updateGuaranteeCase,
-        changePreparationStatus,
-        changeLiquidationStatus,
-        updateRequirementStatus,
-        addRequirement,
-        addFollowUpComment,
-        addExitRepair,
-        updateExitRepair,
-        deleteExitRepair,
-        addCharge,
-        updateCharge,
-        deleteCharge,
-        addFinancialMovement,
-        addAttachment,
-        emitLiquidation,
-        registerTenantRefund,
-        createReceivableFromCase,
-        recordTenantPayment,
-        closeGuaranteeCase,
-        reopenGuaranteeCase,
-        updateSettings,
-        logAudit
-      }}
-    >
+    <AppContext.Provider value={{
+      userRole,
+      setUserRole,
+      activeView,
+      setActiveView,
+      selectedCaseId,
+      setSelectedCaseId,
+      cases,
+      receivables,
+      settings,
+      auditLogs,
+      createGuaranteeCase,
+      updateGuaranteeCase,
+      changePreparationStatus,
+      changeLiquidationStatus,
+      updateRequirementStatus,
+      addRequirement,
+      addFollowUpComment,
+      addExitRepair,
+      updateExitRepair,
+      deleteExitRepair,
+      addCharge,
+      updateCharge,
+      deleteCharge,
+      addFinancialMovement,
+      addAttachment,
+      emitLiquidation,
+      registerTenantRefund,
+      createReceivableFromCase,
+      recordTenantPayment,
+      markReceivableUncollectible,
+      closeGuaranteeCase,
+      reopenGuaranteeCase,
+      updateSettings,
+      logAudit
+    }}>
       {children}
     </AppContext.Provider>
   );
@@ -901,8 +707,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 export const useApp = () => {
   const context = useContext(AppContext);
-  if (!context) {
-    throw new Error('useApp must be used within an AppProvider');
-  }
+  if (!context) throw new Error('useApp must be used within an AppProvider');
   return context;
 };
