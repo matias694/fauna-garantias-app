@@ -5,9 +5,9 @@ import { formatCLP, formatDate } from '../utils/formatters';
 import { Banknote, CheckCircle2, ShieldCheck, WalletCards } from 'lucide-react';
 
 /**
- * Resumen operativo simple para garantías insuficientes.
- * Antes de confirmar responde solo tres preguntas: cuánto cuesta la salida,
- * cuánto está cubierto y cuánto debe provisionar el propietario.
+ * Resumen operativo para garantías insuficientes.
+ * Muestra de forma explícita el orden real de aplicación:
+ * garantía a daños -> Full al daño restante -> garantía sobrante a servicios -> propietario.
  */
 export const FullCoverageCaseBanner: React.FC = () => {
   const {
@@ -32,9 +32,28 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
   const isFull = guaranteeCase.plan === 'FULL';
 
+  const guaranteeForDamage = Math.min(fin.guaranteeAmount, fin.damageCharges);
+  const guaranteeRemainingAfterDamage = Math.max(0, fin.guaranteeAmount - guaranteeForDamage);
+  const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, fin.serviceCharges);
+
+  const damageOwnerRequired = Math.max(
+    0,
+    fin.damageCharges - guaranteeForDamage - fin.fullCoverageApplied
+  );
+  const servicesOwnerRequired = Math.max(
+    0,
+    fin.serviceCharges - guaranteeForServices
+  );
+
   const ownerProvisionApplied = Math.min(readiness.ownerProvisionedTotal, readiness.ownerRequired);
-  const coveredBeforeOwner = fin.guaranteeAmount + fin.fullCoverageApplied;
-  const fundsCovered = coveredBeforeOwner + ownerProvisionApplied;
+  const ownerProvisionForDamage = Math.min(ownerProvisionApplied, damageOwnerRequired);
+  const ownerProvisionForServices = Math.min(
+    Math.max(0, ownerProvisionApplied - ownerProvisionForDamage),
+    servicesOwnerRequired
+  );
+
+  const damagePending = Math.max(0, damageOwnerRequired - ownerProvisionForDamage);
+  const servicesPending = Math.max(0, servicesOwnerRequired - ownerProvisionForServices);
   const missingFunds = readiness.ownerPendingProvision;
 
   const registerOwnerProvision = () => {
@@ -59,72 +78,123 @@ export const FullCoverageCaseBanner: React.FC = () => {
     });
   };
 
+  const ownerPendingDetail = [
+    damagePending > 0 ? `${formatCLP(damagePending)} en daños/reparaciones` : null,
+    servicesPending > 0 ? `${formatCLP(servicesPending)} en gastos comunes y servicios` : null
+  ].filter(Boolean).join(' + ');
+
   return (
     <div className="px-4 sm:px-6 pt-5 max-w-7xl mx-auto">
       <section className="bg-emerald-950 text-white rounded-2xl border border-emerald-900 shadow-sm p-4 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             {isFull ? <ShieldCheck className="w-5 h-5 text-emerald-300" /> : <WalletCards className="w-5 h-5 text-emerald-300" />}
             <div>
-              <h3 className="font-extrabold text-sm">Fondos para la salida</h3>
+              <h3 className="font-extrabold text-sm">Cómo se cubre esta salida</h3>
               <p className="text-[11px] text-emerald-200">
-                {isConfirmed
-                  ? 'Estos son los fondos considerados en la liquidación confirmada.'
-                  : 'Revisa si el presupuesto está cubierto antes de confirmar la liquidación.'}
+                Primero se usa la garantía en daños y reparaciones; {isFull ? 'si no alcanza, Plan Full cubre solo el daño restante. ' : ''}Después se cubren gastos comunes y servicios.
               </p>
             </div>
           </div>
-          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase bg-emerald-800 border border-emerald-700">
-            {isConfirmed ? 'Liquidación confirmada' : 'Antes de confirmar'}
-          </span>
+          <div className="text-left sm:text-right">
+            <span className="text-[10px] uppercase font-bold text-emerald-300 block">Presupuesto total</span>
+            <strong className="text-xl font-black font-mono">{formatCLP(fin.totalCharges)}</strong>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Costo total</span>
-            <strong className="text-xl font-black font-mono">{formatCLP(fin.totalCharges)}</strong>
-            <span className="text-[10px] text-emerald-200 block">Reparaciones y cargos registrados</span>
-          </div>
-
-          <div className="bg-white/10 rounded-xl p-3 border border-white/10">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">Cubierto</span>
-            <strong className="text-xl font-black font-mono">{formatCLP(fundsCovered)}</strong>
-            <div className="text-[10px] text-emerald-200 mt-0.5 space-y-0.5">
-              <div>Garantía: {formatCLP(fin.guaranteeAmount)}</div>
-              {isFull && fin.fullCoverageApplied > 0 && (
-                <div>Plan Full: {formatCLP(fin.fullCoverageApplied)}</div>
-              )}
-              {ownerProvisionApplied > 0 && (
-                <div>Propietario: {formatCLP(ownerProvisionApplied)}</div>
-              )}
-            </div>
-          </div>
-
-          <div className={`rounded-xl p-3 border ${missingFunds > 0 ? 'bg-amber-300/10 border-amber-300/30' : 'bg-emerald-300/10 border-emerald-300/30'}`}>
-            <span className={`text-[10px] uppercase font-bold block ${missingFunds > 0 ? 'text-amber-200' : 'text-emerald-200'}`}>
-              {missingFunds > 0 ? 'Falta cubrir' : 'Estado'}
-            </span>
-            {missingFunds > 0 ? (
-              <strong className="text-xl font-black font-mono text-amber-100">{formatCLP(missingFunds)}</strong>
-            ) : (
-              <div className="flex items-center gap-1.5 mt-1 text-emerald-100 font-extrabold text-sm">
-                <CheckCircle2 className="w-4 h-4" /> Fondos cubiertos
+        <div className="space-y-2">
+          {fin.damageCharges > 0 && (
+            <div className="bg-white/10 rounded-xl border border-white/10 p-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
+              <div className="lg:w-64 shrink-0">
+                <span className="text-[10px] uppercase font-bold text-emerald-200 block">1. Daños y reparaciones</span>
+                <strong className="text-lg font-black font-mono">{formatCLP(fin.damageCharges)}</strong>
               </div>
-            )}
-          </div>
+
+              <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
+                {guaranteeForDamage > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">
+                    Garantía <strong>{formatCLP(guaranteeForDamage)}</strong>
+                  </span>
+                )}
+                {isFull && fin.fullCoverageApplied > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/40 border border-emerald-500/30">
+                    Plan Full <strong>{formatCLP(fin.fullCoverageApplied)}</strong>
+                  </span>
+                )}
+                {ownerProvisionForDamage > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">
+                    Propietario <strong>{formatCLP(ownerProvisionForDamage)}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="lg:w-48 shrink-0 lg:text-right">
+                {damagePending === 0 ? (
+                  <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold">
+                    <CheckCircle2 className="w-4 h-4" /> Cubierto
+                  </span>
+                ) : (
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Falta propietario</span>
+                    <strong className="text-base font-black font-mono text-amber-100">{formatCLP(damagePending)}</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {fin.serviceCharges > 0 && (
+            <div className="bg-white/10 rounded-xl border border-white/10 p-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
+              <div className="lg:w-64 shrink-0">
+                <span className="text-[10px] uppercase font-bold text-emerald-200 block">2. Gastos comunes y servicios</span>
+                <strong className="text-lg font-black font-mono">{formatCLP(fin.serviceCharges)}</strong>
+              </div>
+
+              <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
+                {guaranteeForServices > 0 ? (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">
+                    Garantía sobrante <strong>{formatCLP(guaranteeForServices)}</strong>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-200">
+                    Sin garantía disponible
+                  </span>
+                )}
+                {ownerProvisionForServices > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">
+                    Propietario <strong>{formatCLP(ownerProvisionForServices)}</strong>
+                  </span>
+                )}
+              </div>
+
+              <div className="lg:w-48 shrink-0 lg:text-right">
+                {servicesPending === 0 ? (
+                  <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold">
+                    <CheckCircle2 className="w-4 h-4" /> Cubierto
+                  </span>
+                ) : (
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Falta propietario</span>
+                    <strong className="text-base font-black font-mono text-amber-100">{formatCLP(servicesPending)}</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {isFull && fin.fullCoverageApplied > 0 && (
           <p className="text-[11px] text-emerald-100">
-            El Plan Full cubre automáticamente <strong>{formatCLP(fin.fullCoverageApplied)}</strong> según los daños/reparaciones registrados. No necesariamente utiliza el máximo de {formatCLP(fin.fullCoverageLimit)}.
+            Plan Full está usando <strong>{formatCLP(fin.fullCoverageApplied)}</strong> de un máximo disponible de {formatCLP(fin.fullCoverageLimit)}. La cobertura se ajusta automáticamente al daño registrado.
           </p>
         )}
 
         {!isConfirmed && missingFunds > 0 && (
           <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="text-[11px] text-amber-100">
-              <strong className="block text-xs">El propietario debe provisionar {formatCLP(missingFunds)} para continuar.</strong>
-              <span>Si no provisiona los fondos, ajusta las reparaciones/cargos al presupuesto disponible y el sistema recalculará automáticamente.</span>
+              <strong className="block text-xs">Faltan {formatCLP(missingFunds)} del propietario para continuar.</strong>
+              {ownerPendingDetail && <span className="block mt-0.5">Corresponde a {ownerPendingDetail}.</span>}
+              <span className="block mt-1">Si no provisiona los fondos, ajusta los cargos al presupuesto disponible antes de confirmar la liquidación.</span>
             </div>
             <button
               type="button"
@@ -138,8 +208,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
         )}
 
         {!isConfirmed && missingFunds === 0 && (
-          <div className="bg-emerald-300/10 border border-emerald-300/30 rounded-xl px-3 py-2 text-[11px] text-emerald-100">
-            <strong>Fondos cubiertos.</strong> Revisa los documentos y confirma la liquidación cuando los cargos sean definitivos.
+          <div className="bg-emerald-300/10 border border-emerald-300/30 rounded-xl px-3 py-2 text-[11px] text-emerald-100 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span><strong>Presupuesto completamente cubierto.</strong> Revisa la liquidación y confírmala cuando los cargos sean definitivos.</span>
           </div>
         )}
       </section>
