@@ -8,7 +8,7 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   plan: 'FULL', guaranteeAmount: 400000, ownerContribution, faunaFinancing, movements: [],
   charges: [
     { id: 'DAMAGE', category: 'DAÑOS', description: 'Daños de prueba', amount: damage, date: '09/08/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: [] },
-    ...(services > 0 ? [{ id: 'SERVICE', category: 'GASTOS_COMUNES', description: 'Servicios de prueba', amount: services, date: '09/08/2026', type: 'GASTO_COMUN' as const, notes: '', documents: [], photos: [] }] : [])
+    ...(services !== 0 ? [{ id: 'SERVICE', category: 'GASTOS_COMUNES', description: 'Servicios de prueba', amount: services, date: '09/08/2026', type: 'GASTO_COMUN' as const, notes: '', documents: [], photos: [] }] : [])
   ]
 } as GuaranteeCase);
 
@@ -22,8 +22,8 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.ownerRepairFundingRequired, 0);
   assert.equal(fin.ownerServiceObligation, 100000);
   assert.equal(fin.ownerContributionRequired, 100000);
-  assert.equal(readiness.ownerPendingProvision, 100000); // saldo total legacy
-  assert.equal(readiness.ownerRepairPendingProvision, 0); // lo bloqueante es $0
+  assert.equal(readiness.ownerPendingProvision, 100000);
+  assert.equal(readiness.ownerRepairPendingProvision, 0);
   assert.equal(readiness.ownerServicePending, 100000);
   assert.equal(readiness.readyToConfirm, true);
 }
@@ -38,7 +38,7 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.fullCoverageApplied, 300000);
   assert.equal(fin.ownerRepairFundingRequired, 0);
   assert.equal(fin.ownerServiceObligation, 100000);
-  assert.equal(readiness.ownerPendingProvision, 100000); // saldo total, no bloqueo
+  assert.equal(readiness.ownerPendingProvision, 100000);
   assert.equal(readiness.ownerRepairPendingProvision, 0);
   assert.equal(readiness.ownerServicePending, 100000);
   assert.equal(readiness.readyToConfirm, true);
@@ -86,4 +86,34 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.ownerContributionRequired, 0);
 }
 
-console.log('✓ Prioridad Plan Full y obligaciones del propietario: 6 escenarios OK');
+// Los abonos se registran como montos negativos y reducen solo su grupo económico.
+{
+  const c = makeFullCase(800000, 100000, 350000);
+  c.charges.push({
+    id: 'CREDIT', category: 'DAÑOS', description: 'Abono sobre reparación', amount: -50000,
+    date: '09/08/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+  });
+  const fin = calculateGuaranteeFinances(c, settings);
+  assert.equal(fin.damageCharges, 750000);
+  assert.equal(fin.serviceCharges, 100000);
+  assert.equal(fin.totalCharges, 850000);
+  assert.equal(fin.fullCoverageApplied, 350000);
+  assert.equal(fin.ownerServiceObligation, 100000);
+}
+
+// Un abono de servicios no reduce daños ni la cobertura Full.
+{
+  const c = makeFullCase(800000, 100000, 400000);
+  c.charges.push({
+    id: 'CREDIT-SERVICE', category: 'GASTOS_COMUNES', description: 'Abono de gastos comunes', amount: -100000,
+    date: '09/08/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+  });
+  const fin = calculateGuaranteeFinances(c, settings);
+  assert.equal(fin.damageCharges, 800000);
+  assert.equal(fin.serviceCharges, 0);
+  assert.equal(fin.totalCharges, 800000);
+  assert.equal(fin.fullCoverageApplied, 400000);
+  assert.equal(fin.ownerContributionRequired, 0);
+}
+
+console.log('✓ Prioridad Plan Full, obligaciones y abonos: 8 escenarios OK');
