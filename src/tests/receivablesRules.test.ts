@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { isCaseCompleted } from '../context/AppContext';
+import { calculateFundingReadiness } from '../utils/calculations';
 import type { GuaranteeCase } from '../types';
 
 const baseCase: GuaranteeCase = {
@@ -91,4 +92,60 @@ const withTenantSettlement: GuaranteeCase = {
 };
 assert.equal(isCaseCompleted(withTenantSettlement), true);
 
-console.log('✓ Reglas de cobranza y cierre financiero validadas: 3 escenarios OK');
+// Escenario equivalente a GAR-0002 bajo las reglas vigentes:
+// Estándar, garantía $700.000, daños $700.000, servicios $350.000.
+// Propietario adelanta $100.000 y el arrendatario luego paga los $350.000 completos.
+// El pago recupera primero los $100.000 del propietario y los $250.000 restantes
+// regularizan servicios. No existe financiamiento Fauna en un plan Estándar.
+const standardPaidCase: GuaranteeCase = {
+  ...baseCase,
+  id: 'GAR-STANDARD-PAGADA',
+  plan: 'ESTANDAR',
+  guaranteeAmount: 700000,
+  fullCoverageApplied: 0,
+  faunaFinancing: 0,
+  ownerContribution: 0,
+  charges: [
+    {
+      id: 'STD-DANO', category: 'REPARACIONES', description: 'Daños', amount: 700000,
+      date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+    },
+    {
+      id: 'STD-SERV', category: 'GASTOS_COMUNES', description: 'Servicios', amount: 350000,
+      date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+    }
+  ],
+  movements: [
+    {
+      id: 'STD-APORTE', caseId: 'GAR-STANDARD-PAGADA', date: '01/07/2026', time: '10:00',
+      type: 'APORTE_PROPIETARIO', description: 'Aporte propietario', amount: 100000,
+      user: 'Usuario de prueba', reference: 'APORTE', observation: ''
+    },
+    {
+      id: 'STD-PAGO', caseId: 'GAR-STANDARD-PAGADA', date: '02/07/2026', time: '10:00',
+      type: 'PAGO_ARRENDATARIO', description: 'Pago total arrendatario', amount: 350000,
+      user: 'Usuario de prueba', reference: 'PAGO', observation: ''
+    },
+    {
+      id: 'STD-REC-PROP', caseId: 'GAR-STANDARD-PAGADA', date: '02/07/2026', time: '10:01',
+      type: 'RECUPERACION_PROPIETARIO', description: 'Recuperación propietario', amount: 100000,
+      user: 'Usuario de prueba', reference: 'REC-PROP', observation: ''
+    },
+    {
+      id: 'STD-SALDO', caseId: 'GAR-STANDARD-PAGADA', date: '02/07/2026', time: '10:02',
+      type: 'SALDO_PAGO_ARRENDATARIO', description: 'Saldo aplicado a servicios', amount: 250000,
+      user: 'Usuario de prueba', reference: 'SALDO', observation: ''
+    }
+  ],
+  receivableStatus: 'PAGADA'
+};
+
+const standardReadiness = calculateFundingReadiness(standardPaidCase, {} as never);
+assert.equal(standardReadiness.ownerServiceRequired, 350000);
+assert.equal(standardReadiness.ownerServiceFundedTotal, 100000);
+assert.equal(standardReadiness.ownerServiceSettledFromTenant, 250000);
+assert.equal(standardReadiness.ownerServicePending, 0);
+assert.equal(isCaseCompleted(standardPaidCase), true);
+assert.equal(standardPaidCase.movements.some(m => m.type === 'FINANCIAMIENTO_FAUNA' || m.type === 'RECUPERACION_FAUNA'), false);
+
+console.log('✓ Reglas de cobranza y cierre financiero validadas: 4 escenarios OK');
