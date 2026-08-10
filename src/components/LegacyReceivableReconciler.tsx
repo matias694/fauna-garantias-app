@@ -1,17 +1,23 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import type { FinancialMovement } from '../types';
+import { calculateGuaranteeFinances } from '../utils/calculations';
 
-const MIGRATION_KEY = 'fauna_receivable_reconcile_v1';
+const MIGRATION_KEY = 'fauna_receivable_reconcile_v2';
+
+const sumMovement = (movements: FinancialMovement[], type: FinancialMovement['type']) => movements
+  .filter(m => m.type === type)
+  .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
 /**
- * One-time reconciliation for prototype/demo data created before receivables
- * and guarantee cases were kept aligned. It normalizes the case balances and
- * next-management fields from the receivable and backfills missing historical
- * payment/recovery movements so dashboards and reports remain coherent.
+ * Reconciliación de datos históricos del prototipo con las reglas financieras vigentes:
+ * 1) el pago del arrendatario recupera primero fondos efectivamente aportados por el propietario;
+ * 2) solo un caso Plan Full puede tener financiamiento/cobertura Fauna recuperable;
+ * 3) el remanente del pago se aplica al resto de la deuda (por ejemplo GC/servicios);
+ * 4) una cobranza resuelta no vuelve a imponer una gestión antigua del arrendatario.
  */
 export const LegacyReceivableReconciler: React.FC = () => {
-  const { cases, receivables, updateGuaranteeCase } = useApp();
+  const { cases, receivables, settings, updateGuaranteeCase } = useApp();
 
   useEffect(() => {
     if (localStorage.getItem(MIGRATION_KEY) === 'done') return;
@@ -20,33 +26,50 @@ export const LegacyReceivableReconciler: React.FC = () => {
       const guaranteeCase = cases.find((c) => c.id === receivable.caseId);
       if (!guaranteeCase) return;
 
-      const existingTenantPayments = guaranteeCase.movements
-        .filter((m) => m.type === 'PAGO_ARRENDATARIO')
-        .reduce((sum, m) => sum + m.amount, 0);
+      const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+      const rawMovements = [...(guaranteeCase.movements || [])];
 
-      const existingOwnerRecoveries = guaranteeCase.movements
-        .filter((m) => m.type === 'RECUPERACION_PROPIETARIO')
-        .reduce((sum, m) => sum + m.amount, 0);
+      const ownerProvisionMovements = sumMovement(rawMovements, 'APORTE_PROPIETARIO');
+      const rawOwnerRecoveries = sumMovement(rawMovements, 'RECUPERACION_PROPIETARIO');
+      const ownerProvisionedTotal = ownerProvisionMovements > 0
+        ? ownerProvisionMovements
+        : Math.max(0, (guaranteeCase.ownerContribution || 0) + rawOwnerRecoveries);
 
-      const existingFaunaRecoveries = guaranteeCase.movements
-        .filter((m) => m.type === 'RECUPERACION_FAUNA')
-        .reduce((sum, m) => sum + m.amount, 0);
+      // Standard y Plus nunca deben arrastrar financiamiento Fauna por esta liquidación.
+      // En Full, el monto recuperable máximo es la cobertura que corresponde a los daños.
+      const validFaunaFinancingTotal = guaranteeCase.plan === 'FULL'
+        ? Math.max(
+            fin.faunaFinancingRequired,
+            sumMovement(rawMovements, 'FINANCIAMIENTO_FAUNA'),
+            Math.max(0, guaranteeCase.faunaFinancing || 0) + sumMovement(rawMovements, 'RECUPERACION_FAUNA')
+          )
+        : 0;
 
-      const missingTenantPayment = Math.max(0, receivable.totalPaid - existingTenantPayments);
-      const ownerRecoveryDelta = Math.max(
-        0,
-        guaranteeCase.ownerContribution - receivable.ownerContributionToRecover - existingOwnerRecoveries
-      );
-      const faunaRecoveryDelta = Math.max(
-        0,
-        guaranteeCase.faunaFinancing - receivable.faunaFinancingToRecover - existingFaunaRecoveries
-      );
+      const totalPaid = Math.max(0, receivable.totalPaid || 0);
+      const ownerRecoveryTarget = Math.min(totalPaid, ownerProvisionedTotal);
+      const afterOwner = Math.max(0, totalPaid - ownerRecoveryTarget);
+      const faunaRecoveryTarget = Math.min(afterOwner, validFaunaFinancingTotal);
+      const tenantSettlementTarget = Math.max(0, afterOwner - faunaRecoveryTarget);
+
+      // Elimina clasificaciones Fauna heredadas que son inválidas en planes no Full.
+      let movements = guaranteeCase.plan === 'FULL'
+        ? rawMovements
+        : rawMovements.filter(m => m.type !== 'FINANCIAMIENTO_FAUNA' && m.type !== 'RECUPERACION_FAUNA');
+
+      const existingTenantPayments = sumMovement(movements, 'PAGO_ARRENDATARIO');
+      const existingOwnerRecoveries = sumMovement(movements, 'RECUPERACION_PROPIETARIO');
+      const existingFaunaRecoveries = sumMovement(movements, 'RECUPERACION_FAUNA');
+      const existingTenantSettlement = sumMovement(movements, 'SALDO_PAGO_ARRENDATARIO');
 
       const reconciliationDate = receivable.lastManagementDate || receivable.createdDate;
-      const movements: FinancialMovement[] = [...guaranteeCase.movements];
 
+      const appendMovement = (movement: FinancialMovement) => {
+        movements = [...movements, movement];
+      };
+
+      const missingTenantPayment = Math.max(0, totalPaid - existingTenantPayments);
       if (missingTenantPayment > 0) {
-        movements.push({
+        appendMovement({
           id: `MOV-SYNC-PAGO-${receivable.id}`,
           caseId: guaranteeCase.id,
           date: reconciliationDate,
@@ -60,58 +83,75 @@ export const LegacyReceivableReconciler: React.FC = () => {
         });
       }
 
-      if (ownerRecoveryDelta > 0) {
-        movements.push({
+      const missingOwnerRecovery = Math.max(0, ownerRecoveryTarget - existingOwnerRecoveries);
+      if (missingOwnerRecovery > 0) {
+        appendMovement({
           id: `MOV-SYNC-PROP-${receivable.id}`,
           caseId: guaranteeCase.id,
           date: reconciliationDate,
           time: '12:01',
           type: 'RECUPERACION_PROPIETARIO',
           description: 'Recuperación histórica de aporte propietario conciliada',
-          amount: ownerRecoveryDelta,
+          amount: missingOwnerRecovery,
           user: 'Migración de sistema',
           reference: `SYNC-PROP-${receivable.id}`,
-          observation: 'Reconstruida desde el saldo pendiente de recuperación del propietario.'
+          observation: 'Distribución reconstruida con prioridad de recuperación al propietario.'
         });
       }
 
-      if (faunaRecoveryDelta > 0) {
-        movements.push({
+      const missingFaunaRecovery = Math.max(0, faunaRecoveryTarget - existingFaunaRecoveries);
+      if (missingFaunaRecovery > 0) {
+        appendMovement({
           id: `MOV-SYNC-FAUNA-${receivable.id}`,
           caseId: guaranteeCase.id,
           date: reconciliationDate,
           time: '12:02',
           type: 'RECUPERACION_FAUNA',
-          description: 'Recuperación histórica de financiamiento Fauna conciliada',
-          amount: faunaRecoveryDelta,
+          description: 'Recuperación histórica de cobertura Full conciliada',
+          amount: missingFaunaRecovery,
           user: 'Migración de sistema',
           reference: `SYNC-FAUNA-${receivable.id}`,
-          observation: 'Reconstruida desde el saldo pendiente de recuperación de Fauna.'
+          observation: 'Distribución reconstruida después de recuperar el aporte del propietario.'
         });
       }
 
+      const missingTenantSettlement = Math.max(0, tenantSettlementTarget - existingTenantSettlement);
+      if (missingTenantSettlement > 0) {
+        appendMovement({
+          id: `MOV-SYNC-SALDO-${receivable.id}`,
+          caseId: guaranteeCase.id,
+          date: reconciliationDate,
+          time: '12:03',
+          type: 'SALDO_PAGO_ARRENDATARIO',
+          description: 'Saldo histórico de pago aplicado a la deuda del arrendatario',
+          amount: missingTenantSettlement,
+          user: 'Migración de sistema',
+          reference: `SYNC-SALDO-${receivable.id}`,
+          observation: 'Remanente conciliado después de recuperar propietario y, solo si corresponde, cobertura Full.'
+        });
+      }
+
+      const ownerOutstanding = Math.max(0, ownerProvisionedTotal - ownerRecoveryTarget);
+      const faunaOutstanding = Math.max(0, validFaunaFinancingTotal - faunaRecoveryTarget);
+
       const hasDifferences =
-        guaranteeCase.ownerContribution !== receivable.ownerContributionToRecover ||
-        guaranteeCase.faunaFinancing !== receivable.faunaFinancingToRecover ||
+        guaranteeCase.ownerContribution !== ownerOutstanding ||
+        guaranteeCase.faunaFinancing !== faunaOutstanding ||
         guaranteeCase.receivableStatus !== receivable.status ||
-        guaranteeCase.nextManagement !== receivable.nextManagement ||
-        guaranteeCase.nextManagementDate !== receivable.nextManagementDate ||
-        movements.length !== guaranteeCase.movements.length;
+        JSON.stringify(movements) !== JSON.stringify(rawMovements);
 
       if (!hasDifferences) return;
 
       updateGuaranteeCase(guaranteeCase.id, {
-        ownerContribution: receivable.ownerContributionToRecover,
-        faunaFinancing: receivable.faunaFinancingToRecover,
+        ownerContribution: ownerOutstanding,
+        faunaFinancing: faunaOutstanding,
         receivableStatus: receivable.status,
-        nextManagement: receivable.nextManagement,
-        nextManagementDate: receivable.nextManagementDate,
         movements
       });
     });
 
     localStorage.setItem(MIGRATION_KEY, 'done');
-  }, [cases, receivables, updateGuaranteeCase]);
+  }, [cases, receivables, settings, updateGuaranteeCase]);
 
   return null;
 };
