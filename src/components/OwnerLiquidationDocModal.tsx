@@ -112,75 +112,50 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                     );
                   })}
                 </tbody>
+                <tfoot className="border-t-2 border-slate-300 bg-slate-50">
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600 font-semibold">Total cargos y abonos</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-slate-900">-{formatCLP(fin.totalCharges)}</td>
+                  </tr>
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Garantía disponible del contrato</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.guaranteeAmount)}</td>
+                  </tr>
+                  {hasFullBenefit && (
+                    <tr className="border-b border-slate-200">
+                      <td colSpan={3} className="p-2.5 text-right text-slate-600">Cobertura Plan Full aplicada a daños</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.fullCoverageApplied)}</td>
+                    </tr>
+                  )}
+                  {ownerSettlement.ownerContributionApplied > 0 && (
+                    <tr className="border-b border-slate-200">
+                      <td colSpan={3} className="p-2.5 text-right text-slate-600">Fondos ya pagados/provisionados por el propietario</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-blue-700">+{formatCLP(ownerSettlement.ownerContributionApplied)}</td>
+                    </tr>
+                  )}
+                  {ownerSettlement.refundToTenant > 0 && (
+                    <tr className="border-b border-slate-200">
+                      <td colSpan={3} className="p-2.5 text-right text-slate-600">Saldo de garantía a devolver al arrendatario</td>
+                      <td className="p-2.5 text-right font-mono font-bold text-emerald-700">{formatCLP(ownerSettlement.refundToTenant)}</td>
+                    </tr>
+                  )}
+                  <tr className="bg-white border-t-2 border-slate-300">
+                    <td colSpan={3} className="p-3 text-right text-sm font-extrabold text-slate-900">RESULTADO PROPIETARIO</td>
+                    <td className={`p-3 text-right font-mono text-base font-black ${ownerTotalPending > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                      {ownerTotalPending > 0 ? `${formatCLP(ownerTotalPending)} PENDIENTE` : '$0'}
+                    </td>
+                  </tr>
+                  {ownerTotalPending > 0 && (
+                    <tr className="bg-white">
+                      <td colSpan={4} className="px-3 pb-3 text-right text-[10px] text-slate-500">
+                        {ownerSettlement.ownerRepairPending > 0 && <span>{formatCLP(ownerSettlement.ownerRepairPending)} reparaciones</span>}
+                        {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 && <span> · </span>}
+                        {ownerSettlement.ownerServicePending > 0 && <span>{formatCLP(ownerSettlement.ownerServicePending)} gastos comunes/servicios</span>}
+                      </td>
+                    </tr>
+                  )}
+                </tfoot>
               </table>
-            )}
-          </div>
-
-          <div className="bg-slate-900 text-white p-5 rounded-xl space-y-3 shadow-sm">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-300">Garantía disponible del contrato:</span>
-              <strong className="font-mono text-sm text-white">{formatCLP(fin.guaranteeAmount)}</strong>
-            </div>
-
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-300">(-) Neto de cargos y abonos:</span>
-              <strong className="font-mono text-sm text-rose-300">-{formatCLP(fin.totalCharges)}</strong>
-            </div>
-
-            {hasFullBenefit && (
-              <div className="flex justify-between items-center text-xs text-purple-300">
-                <span>(+) Cobertura Plan Full aplicada a daños:</span>
-                <strong className="font-mono text-sm">+{formatCLP(fin.fullCoverageApplied)}</strong>
-              </div>
-            )}
-
-            {ownerSettlement.refundToTenant > 0 && (
-              <div className="flex justify-between items-center text-xs text-emerald-200">
-                <span>Saldo de garantía a devolver al arrendatario:</span>
-                <strong className="font-mono text-sm">{formatCLP(ownerSettlement.refundToTenant)}</strong>
-              </div>
-            )}
-
-            {ownerSettlement.ownerContributionRequired > 0 && (
-              <div className="border-t border-slate-700 pt-3 space-y-1.5">
-                <div className="flex justify-between items-center text-xs text-amber-200">
-                  <span>Diferencia total a cargo del propietario:</span>
-                  <strong className="font-mono text-sm">{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>
-                </div>
-                <div className="text-right text-[10px] text-slate-400">
-                  {ownerSettlement.ownerRepairFundingRequired > 0 && (
-                    <span>{formatCLP(ownerSettlement.ownerRepairFundingRequired)} reparaciones</span>
-                  )}
-                  {ownerSettlement.ownerRepairFundingRequired > 0 && ownerSettlement.ownerServiceObligation > 0 && <span> · </span>}
-                  {ownerSettlement.ownerServiceObligation > 0 && (
-                    <span>{formatCLP(ownerSettlement.ownerServiceObligation)} gastos comunes/servicios</span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {ownerSettlement.ownerContributionApplied > 0 && (
-              <div className="flex justify-between items-center text-xs text-blue-300">
-                <span>(-) Fondos ya pagados/provisionados por el propietario:</span>
-                <strong className="font-mono text-sm">-{formatCLP(ownerSettlement.ownerContributionApplied)}</strong>
-              </div>
-            )}
-
-            <div className="border-t border-slate-700 pt-3 flex justify-between items-center text-sm font-bold gap-4">
-              <span>SALDO FINAL PROPIETARIO:</span>
-              {ownerTotalPending > 0 ? (
-                <span className="font-mono text-amber-300 text-right text-lg">{formatCLP(ownerTotalPending)} PENDIENTE</span>
-              ) : (
-                <span className="font-mono text-emerald-400 text-lg">$0</span>
-              )}
-            </div>
-
-            {ownerTotalPending > 0 && (
-              <div className="text-right text-[10px] text-slate-300">
-                {ownerSettlement.ownerRepairPending > 0 && <span>{formatCLP(ownerSettlement.ownerRepairPending)} reparaciones</span>}
-                {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 && <span> · </span>}
-                {ownerSettlement.ownerServicePending > 0 && <span>{formatCLP(ownerSettlement.ownerServicePending)} gastos comunes/servicios</span>}
-              </div>
             )}
           </div>
 
@@ -192,15 +167,11 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               <div>
                 <span className="block text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Beneficio Plan Full aplicado</span>
                 <p className="text-xs leading-relaxed mt-0.5">
-                  La cobertura aplicada redujo en igual monto la diferencia que habría debido asumir el propietario por daños y reparaciones. El Plan Full no cubre gastos comunes ni servicios.
+                  La cobertura aplicada redujo en <strong>{formatCLP(fin.fullCoverageApplied)}</strong> lo que habría debido asumir el propietario por daños y reparaciones. El Plan Full no cubre gastos comunes ni servicios.
                 </p>
               </div>
             </div>
           )}
-
-          <p className="text-[10px] text-slate-500 leading-relaxed">
-            Este documento refleja la liquidación del contrato y sus cargos, abonos y coberturas aplicadas. Los respaldos asociados se conservan en el expediente del caso.
-          </p>
         </div>
       </div>
     </div>
