@@ -22,7 +22,8 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.ownerRepairFundingRequired, 0);
   assert.equal(fin.ownerServiceObligation, 100000);
   assert.equal(fin.ownerContributionRequired, 100000);
-  assert.equal(readiness.ownerRepairPendingProvision, 0);
+  assert.equal(readiness.ownerPendingProvision, 100000); // saldo total legacy
+  assert.equal(readiness.ownerRepairPendingProvision, 0); // lo bloqueante es $0
   assert.equal(readiness.ownerServicePending, 100000);
   assert.equal(readiness.readyToConfirm, true);
 }
@@ -37,7 +38,8 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.fullCoverageApplied, 300000);
   assert.equal(fin.ownerRepairFundingRequired, 0);
   assert.equal(fin.ownerServiceObligation, 100000);
-  assert.equal(readiness.ownerPendingProvision, 0);
+  assert.equal(readiness.ownerPendingProvision, 100000); // saldo total, no bloqueo
+  assert.equal(readiness.ownerRepairPendingProvision, 0);
   assert.equal(readiness.ownerServicePending, 100000);
   assert.equal(readiness.readyToConfirm, true);
 }
