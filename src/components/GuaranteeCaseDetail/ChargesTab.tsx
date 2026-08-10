@@ -149,6 +149,23 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     }
 
     const normalizedCategory = normalizeCategory(category);
+
+    if (movementKind === 'ABONO') {
+      const availableForCredit = guaranteeCase.charges
+        .filter(ch => ch.id !== editingCharge?.id && normalizeCategory(ch.category) === normalizedCategory)
+        .reduce((sum, ch) => sum + ch.amount, 0);
+
+      if (availableForCredit <= 0) {
+        alert(`No existe un cargo pendiente en ${conceptLabel(normalizedCategory)} al cual aplicar este abono.`);
+        return;
+      }
+
+      if (amount > availableForCredit) {
+        alert(`El abono no puede superar el saldo del concepto (${formatCLP(availableForCredit)}).`);
+        return;
+      }
+    }
+
     const signedAmount = movementKind === 'ABONO' ? -Math.abs(amount) : Math.abs(amount);
     const type = inferChargeType(normalizedCategory);
     const isRepairCharge = movementKind === 'CARGO' && type === 'DAÑO_REPARACION';
