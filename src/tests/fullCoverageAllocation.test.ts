@@ -69,6 +69,24 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(readiness.readyToConfirm, false);
 }
 
+// Caso de informe propietario: $1.000.000 en reparaciones + $200.000 en servicios.
+// La garantía cubre $400.000 de daños, Full otros $400.000, y el propietario queda
+// con $200.000 de reparaciones + $200.000 de servicios = $400.000 en total.
+{
+  const c = makeFullCase(1000000, 200000, 400000);
+  const fin = calculateGuaranteeFinances(c, settings);
+  const readiness = calculateFundingReadiness(c, settings);
+  assert.equal(fin.totalCharges, 1200000);
+  assert.equal(fin.guaranteeForDamage, 400000);
+  assert.equal(fin.fullCoverageApplied, 400000);
+  assert.equal(fin.ownerRepairFundingRequired, 200000);
+  assert.equal(fin.ownerServiceObligation, 200000);
+  assert.equal(fin.ownerContributionRequired, 400000);
+  assert.equal(readiness.ownerRepairPendingProvision, 200000);
+  assert.equal(readiness.ownerServicePending, 200000);
+  assert.equal(readiness.ownerPendingProvision, 400000);
+}
+
 // Cobertura Full parcial.
 {
   const fin = calculateGuaranteeFinances(makeFullCase(450000, 0), settings);
@@ -116,4 +134,4 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.ownerContributionRequired, 0);
 }
 
-console.log('✓ Prioridad Plan Full, obligaciones y abonos: 8 escenarios OK');
+console.log('✓ Prioridad Plan Full, obligaciones y abonos: 9 escenarios OK');
