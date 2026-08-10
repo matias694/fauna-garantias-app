@@ -27,7 +27,7 @@ export interface FundingReadiness {
   /** Total legacy: reparaciones + servicios a cargo del propietario. */
   ownerRequired: number;
   ownerProvisionedTotal: number;
-  /** Solo la provisión necesaria para reparaciones. Es el monto que puede bloquear. */
+  /** Saldo legacy total pendiente del propietario; NO determina por sí solo el bloqueo. */
   ownerPendingProvision: number;
   ownerRepairRequired: number;
   ownerRepairFundedTotal: number;
@@ -214,13 +214,15 @@ export function calculateFundingReadiness(
 
   const fullCoverageRequired = fin.faunaFinancingRequired;
   const fullCoveragePendingExecution = Math.max(0, fullCoverageRequired - fullCoverageExecutedTotal);
+  const ownerPendingProvision = Math.max(
+    0,
+    fin.ownerContributionRequired - ownerProvisionedTotal - tenantUnallocatedPayments
+  );
 
   return {
     ownerRequired: fin.ownerContributionRequired,
     ownerProvisionedTotal,
-    // Conservamos el nombre por compatibilidad, pero desde ahora representa solo
-    // provisión BLOQUEANTE para reparaciones.
-    ownerPendingProvision: ownerRepairPendingProvision,
+    ownerPendingProvision,
     ownerRepairRequired,
     ownerRepairFundedTotal,
     ownerRepairPendingProvision,
@@ -231,6 +233,7 @@ export function calculateFundingReadiness(
     fullCoverageRequired,
     fullCoverageExecutedTotal,
     fullCoveragePendingExecution,
+    // Solo las reparaciones sin provisión (y la cobertura Full no ejecutada) bloquean.
     readyToConfirm: ownerRepairPendingProvision === 0 && fullCoveragePendingExecution === 0
   };
 }
