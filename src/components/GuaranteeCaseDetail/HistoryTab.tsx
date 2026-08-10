@@ -46,6 +46,16 @@ const blockedByLabel = (blockedBy: string) => {
   return blockedBy.replace(/_/g, ' ').toLowerCase();
 };
 
+const formatCLPAmountsInText = (value: string) => value.replace(
+  /\$(-?)(\d+(?:\.\d{3})*)/g,
+  (_match, sign: string, rawAmount: string) => {
+    const amount = Number(rawAmount.replace(/\./g, ''));
+    if (!Number.isFinite(amount)) return _match;
+    const formatted = amount.toLocaleString('es-CL');
+    return sign === '-' ? `-$${formatted}` : `$${formatted}`;
+  }
+);
+
 export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
   const { auditLogs } = useApp();
 
@@ -110,6 +120,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     if (action === 'Cierre de Caso') detail = 'El caso fue cerrado.';
     if (action === 'Reapertura de Caso') detail = 'El caso fue reabierto.';
 
+    detail = formatCLPAmountsInText(detail);
+
     return {
       id: log.id,
       timestamp: log.timestamp,
@@ -134,7 +146,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     action: item.comment.startsWith('Próxima gestión actualizada desde Resumen')
       ? 'Próxima gestión actualizada'
       : `Seguimiento · ${item.area === 'Garantia' ? 'Garantía' : item.area === 'Reparacion' ? 'Reparación' : 'General'}`,
-    detail: item.comment,
+    detail: formatCLPAmountsInText(item.comment),
     sortValue: parseChileTimestamp(item.createdAt)
   }));
 
