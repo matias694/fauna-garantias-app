@@ -21,19 +21,24 @@ export const FundingRequirementsSync: React.FC = () => {
       if (c.isClosed || c.liquidationStatus === 'EMITIDA') return;
 
       const fin = calculateGuaranteeFinances(c, settings);
-      const desiredFullCoverage = c.plan === 'FULL' ? fin.fullCoverageApplied : 0;
+      const regularRequirements = (c.requirements || []).filter(
+        r => r.id !== OWNER_PROVISION_REQ_ID && r.id !== LEGACY_FULL_COVERAGE_REQ_ID
+      );
+      const regularRequirementsDone = regularRequirements.length > 0 && regularRequirements.every(
+        r => r.status === 'COMPLETO' || r.status === 'NO_APLICA'
+      );
+
+      // Full no exige una acción manual adicional: una vez listos los antecedentes,
+      // el sistema reserva/aplica solo la cobertura que corresponde al presupuesto actual.
+      const desiredFullCoverage = c.plan === 'FULL' && regularRequirementsDone
+        ? fin.fullCoverageApplied
+        : 0;
       const coverageChanged = (c.faunaFinancing || 0) !== desiredFullCoverage;
 
-      // Calculamos readiness considerando la cobertura automática que corresponde
-      // al presupuesto actual, sin exigir una segunda acción manual al usuario.
       const projectedCase = coverageChanged
         ? { ...c, faunaFinancing: desiredFullCoverage }
         : c;
       const readiness = calculateFundingReadiness(projectedCase, settings);
-
-      const regularRequirements = (c.requirements || []).filter(
-        r => r.id !== OWNER_PROVISION_REQ_ID && r.id !== LEGACY_FULL_COVERAGE_REQ_ID
-      );
       const fundingRequirements: LiquidationRequirement[] = [];
 
       if (fin.isInsufficient && readiness.ownerRequired > 0) {
