@@ -7,6 +7,8 @@ export interface FinancialCalculationResult {
   serviceCharges: number;
   rawBalance: number;
   guaranteeUsed: number;
+  guaranteeForDamage: number;
+  guaranteeForServices: number;
   isSurplus: boolean;
   isExact: boolean;
   isInsufficient: boolean;
@@ -14,15 +16,27 @@ export interface FinancialCalculationResult {
   tenantDeficit: number;
   fullCoverageLimit: number;
   fullCoverageApplied: number;
+  ownerRepairFundingRequired: number;
+  ownerServiceObligation: number;
   ownerContributionRequired: number;
   faunaFinancingRequired: number;
   tenantReceivableAmount: number;
 }
 
 export interface FundingReadiness {
+  /** Total legacy: reparaciones + servicios a cargo del propietario. */
   ownerRequired: number;
   ownerProvisionedTotal: number;
+  /** Saldo legacy total pendiente del propietario; NO determina por sí solo el bloqueo. */
   ownerPendingProvision: number;
+  ownerRepairRequired: number;
+  ownerRepairFundedTotal: number;
+  ownerRepairPendingProvision: number;
+  /** Servicios/GC pueden quedar como obligación vigente sin bloquear la liquidación. */
+  ownerServiceRequired: number;
+  ownerServiceFundedTotal: number;
+  ownerServiceSettledFromTenant: number;
+  ownerServicePending: number;
   fullCoverageRequired: number;
   fullCoverageExecutedTotal: number;
   fullCoveragePendingExecution: number;
@@ -34,6 +48,10 @@ export interface OwnerLiquidationReconciliation {
   ownerContributionFundedTotal: number;
   ownerContributionApplied: number;
   ownerContributionPending: number;
+  ownerRepairFundingRequired: number;
+  ownerRepairPending: number;
+  ownerServiceObligation: number;
+  ownerServicePending: number;
   refundToTenant: number;
   reconciliationBalance: number;
 }
@@ -68,30 +86,42 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // Prioridad de aplicación:
+  // Prioridad contractual/operativa:
   // 1) la garantía se aplica primero a daños/reparaciones;
   // 2) si no alcanza, Plan Full cubre SOLO el daño restante, hasta un máximo
   //    equivalente al 100% de la garantía;
-  // 3) recién después quedan gastos comunes, servicios básicos y otros cargos.
-  // Por lo tanto, Full nunca libera garantía para cubrir servicios.
+  // 3) la garantía que eventualmente sobre después de los daños puede cubrir
+  //    gastos comunes, servicios básicos y otros cargos;
+  // 4) la diferencia de reparaciones requiere provisión previa del propietario,
+  //    mientras la diferencia de servicios puede quedar como obligación vigente.
+  const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
+  const guaranteeRemainingAfterDamage = Math.max(0, guaranteeAmount - guaranteeForDamage);
+  const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, serviceCharges);
+
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
   let fullCoverageApplied = 0;
 
-  if (c.plan === 'FULL' && isInsufficient) {
-    const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
+  if (c.plan === 'FULL') {
     const uncoveredDamage = Math.max(0, damageCharges - guaranteeForDamage);
     fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
   }
 
-  // Nombres internos legacy: ownerContributionRequired y faunaFinancingRequired.
-  // Operativamente representan la diferencia que debe provisionar el propietario
-  // y la cobertura Full que Fauna debe aplicar, respectivamente.
-  const ownerContributionRequired = isInsufficient
-    ? Math.max(0, tenantDeficit - fullCoverageApplied)
-    : 0;
-  const faunaFinancingRequired = c.plan === 'FULL' && isInsufficient
-    ? fullCoverageApplied
-    : 0;
+  const ownerRepairFundingRequired = Math.max(
+    0,
+    damageCharges - guaranteeForDamage - fullCoverageApplied
+  );
+  const ownerServiceObligation = Math.max(
+    0,
+    serviceCharges - guaranteeForServices
+  );
+
+  // Campo agregado legacy. Sigue representando la diferencia económica total a cargo
+  // del propietario, pero ya no significa que todo ese monto bloquee la liquidación.
+  const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
+
+  // Nombre interno legacy: faunaFinancingRequired. Operativamente representa la
+  // cobertura Full que Fauna aplica al daño restante.
+  const faunaFinancingRequired = c.plan === 'FULL' ? fullCoverageApplied : 0;
 
   // La cobertura Full protege al propietario, pero no extingue la deuda del arrendatario.
   const tenantReceivableAmount = tenantDeficit;
@@ -103,6 +133,8 @@ export function calculateGuaranteeFinances(
     serviceCharges,
     rawBalance,
     guaranteeUsed,
+    guaranteeForDamage,
+    guaranteeForServices,
     isSurplus,
     isExact,
     isInsufficient,
@@ -110,6 +142,8 @@ export function calculateGuaranteeFinances(
     tenantDeficit,
     fullCoverageLimit,
     fullCoverageApplied,
+    ownerRepairFundingRequired,
+    ownerServiceObligation,
     ownerContributionRequired,
     faunaFinancingRequired,
     tenantReceivableAmount
@@ -117,10 +151,12 @@ export function calculateGuaranteeFinances(
 }
 
 /**
- * Determina si los fondos necesarios para sostener la liquidación ya ocurrieron.
- * Una promesa o aprobación del propietario no cuenta como fondos: solo una provisión
- * efectivamente recibida. La cobertura Full puede ser asignada automáticamente según
- * el presupuesto antes de confirmar la liquidación.
+ * Determina qué fondos son requisito para confirmar y qué montos pueden permanecer
+ * como obligación posterior. Una promesa del propietario nunca cuenta como fondos.
+ *
+ * - Reparaciones no cubiertas: deben estar efectivamente provisionadas antes de confirmar.
+ * - Gastos comunes/servicios no cubiertos: pueden quedar pendientes del propietario y
+ *   NO bloquean la confirmación de la liquidación.
  */
 export function calculateFundingReadiness(
   c: GuaranteeCase,
@@ -142,6 +178,13 @@ export function calculateFundingReadiness(
     .filter(m => m.type === 'RECUPERACION_FAUNA')
     .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
+  // Cuando el arrendatario paga una parte que no corresponde a recuperar fondos ya
+  // adelantados por propietario/Fauna, ese saldo puede extinguir obligaciones de
+  // servicios que todavía seguían pendientes.
+  const tenantUnallocatedPayments = (c.movements || [])
+    .filter(m => m.type === 'SALDO_PAGO_ARRENDATARIO')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+
   // Compatibilidad con casos legacy que podían guardar solo el saldo vigente.
   const ownerProvisionedTotal = ownerProvisionMovements > 0
     ? ownerProvisionMovements
@@ -150,19 +193,48 @@ export function calculateFundingReadiness(
     ? fullCoverageExecutionMovements
     : Math.max(0, (c.faunaFinancing || 0) + faunaRecoveries);
 
-  const ownerRequired = fin.ownerContributionRequired;
+  // Los fondos del propietario se asignan primero a cualquier diferencia de reparación,
+  // porque esa es la condición que permite ejecutar los trabajos. Solo el remanente se
+  // considera pago/provisión de gastos comunes y servicios.
+  const ownerRepairRequired = fin.ownerRepairFundingRequired;
+  const ownerRepairFundedTotal = Math.min(ownerProvisionedTotal, ownerRepairRequired);
+  const ownerRepairPendingProvision = Math.max(0, ownerRepairRequired - ownerRepairFundedTotal);
+
+  const ownerServiceRequired = fin.ownerServiceObligation;
+  const ownerFundsAvailableForServices = Math.max(0, ownerProvisionedTotal - ownerRepairFundedTotal);
+  const ownerServiceFundedTotal = Math.min(ownerFundsAvailableForServices, ownerServiceRequired);
+  const ownerServiceSettledFromTenant = Math.min(
+    Math.max(0, ownerServiceRequired - ownerServiceFundedTotal),
+    tenantUnallocatedPayments
+  );
+  const ownerServicePending = Math.max(
+    0,
+    ownerServiceRequired - ownerServiceFundedTotal - ownerServiceSettledFromTenant
+  );
+
   const fullCoverageRequired = fin.faunaFinancingRequired;
-  const ownerPendingProvision = Math.max(0, ownerRequired - ownerProvisionedTotal);
   const fullCoveragePendingExecution = Math.max(0, fullCoverageRequired - fullCoverageExecutedTotal);
+  const ownerPendingProvision = Math.max(
+    0,
+    fin.ownerContributionRequired - ownerProvisionedTotal - tenantUnallocatedPayments
+  );
 
   return {
-    ownerRequired,
+    ownerRequired: fin.ownerContributionRequired,
     ownerProvisionedTotal,
     ownerPendingProvision,
+    ownerRepairRequired,
+    ownerRepairFundedTotal,
+    ownerRepairPendingProvision,
+    ownerServiceRequired,
+    ownerServiceFundedTotal,
+    ownerServiceSettledFromTenant,
+    ownerServicePending,
     fullCoverageRequired,
     fullCoverageExecutedTotal,
     fullCoveragePendingExecution,
-    readyToConfirm: ownerPendingProvision === 0 && fullCoveragePendingExecution === 0
+    // Solo las reparaciones sin provisión (y la cobertura Full no ejecutada) bloquean.
+    readyToConfirm: ownerRepairPendingProvision === 0 && fullCoveragePendingExecution === 0
   };
 }
 
@@ -204,6 +276,10 @@ export function calculateOwnerLiquidationReconciliation(
     ownerContributionFundedTotal,
     ownerContributionApplied,
     ownerContributionPending,
+    ownerRepairFundingRequired: fin.ownerRepairFundingRequired,
+    ownerRepairPending: readiness.ownerRepairPendingProvision,
+    ownerServiceObligation: fin.ownerServiceObligation,
+    ownerServicePending: readiness.ownerServicePending,
     refundToTenant: fin.refundToTenant,
     reconciliationBalance
   };
