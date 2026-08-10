@@ -39,8 +39,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
   if (!isOpen || !receivable) return null;
 
   const guaranteeCase = cases.find(c => c.id === receivable.caseId);
-  const ownerToRecover = Math.max(receivable.ownerContributionToRecover, guaranteeCase?.ownerContribution || 0);
-  const faunaToRecover = Math.max(receivable.faunaFinancingToRecover, guaranteeCase?.faunaFinancing || 0);
+  // El caso es la fuente vigente de los montos efectivamente pendientes de recuperar.
+  // Los campos de la cuenta por cobrar se usan solo como fallback para datos antiguos
+  // en los que el caso ya no esté disponible.
+  const ownerToRecover = guaranteeCase
+    ? Math.max(0, guaranteeCase.ownerContribution || 0)
+    : Math.max(0, receivable.ownerContributionToRecover);
+  const faunaToRecover = guaranteeCase
+    ? Math.max(0, guaranteeCase.faunaFinancing || 0)
+    : Math.max(0, receivable.faunaFinancingToRecover);
   const newPending = Math.max(0, receivable.pendingBalance - (paymentAmount || 0));
   const isPartialPayment = newPending > 0;
 
