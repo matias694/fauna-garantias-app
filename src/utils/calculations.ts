@@ -68,20 +68,17 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // Regla Plan Full:
-  // - la cobertura adicional máxima equivale al 100% de la garantía;
-  // - solo cubre daños/reparaciones;
-  // - la garantía base puede cubrir cualquier cargo, por lo que primero se reserva
-  //   para cargos que Full NO cubre (servicios/otros) y luego para daños.
-  // Así se usa correctamente el beneficio Full sin pedir provisión al propietario
-  // cuando garantía + cobertura alcanzan para el presupuesto total.
+  // Prioridad de aplicación:
+  // 1) la garantía se aplica primero a daños/reparaciones;
+  // 2) si no alcanza, Plan Full cubre SOLO el daño restante, hasta un máximo
+  //    equivalente al 100% de la garantía;
+  // 3) recién después quedan gastos comunes, servicios básicos y otros cargos.
+  // Por lo tanto, Full nunca libera garantía para cubrir servicios.
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
   let fullCoverageApplied = 0;
 
   if (c.plan === 'FULL' && isInsufficient) {
-    const guaranteeForNonDamage = Math.min(guaranteeAmount, serviceCharges);
-    const guaranteeRemainingForDamage = Math.max(0, guaranteeAmount - guaranteeForNonDamage);
-    const guaranteeForDamage = Math.min(guaranteeRemainingForDamage, damageCharges);
+    const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
     const uncoveredDamage = Math.max(0, damageCharges - guaranteeForDamage);
     fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
   }
