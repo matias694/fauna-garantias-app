@@ -8,10 +8,11 @@ const OWNER_PROVISION_REQ_ID = 'REQ-FUND-OWNER';
 const LEGACY_FULL_COVERAGE_REQ_ID = 'REQ-FUND-FULL';
 
 /**
- * La única acción financiera que debe resolver el usuario antes de confirmar es
- * una eventual provisión del propietario. La cobertura Plan Full se calcula y
- * asigna automáticamente según los daños/reparaciones registrados, hasta el límite
- * del plan. Si cambia el presupuesto antes de confirmar, la cobertura se recalcula.
+ * Antes de confirmar, solo una diferencia de DAÑOS/REPARACIONES a cargo del propietario
+ * exige provisión efectiva. Los gastos comunes y servicios que queden sin fondos no
+ * bloquean la liquidación: permanecen como obligación vigente del propietario.
+ *
+ * La cobertura Plan Full se calcula y asigna automáticamente según el daño registrado.
  */
 export const FundingRequirementsSync: React.FC = () => {
   const { cases, settings, updateGuaranteeCase } = useApp();
@@ -41,17 +42,20 @@ export const FundingRequirementsSync: React.FC = () => {
       const readiness = calculateFundingReadiness(projectedCase, settings);
       const fundingRequirements: LiquidationRequirement[] = [];
 
-      if (fin.isInsufficient && readiness.ownerRequired > 0) {
+      // Solo las reparaciones sin cobertura son requisito BLOQUEANTE.
+      if (readiness.ownerRepairRequired > 0) {
         fundingRequirements.push({
           id: OWNER_PROVISION_REQ_ID,
-          name: `Provisión de fondos del propietario (${formatCLP(readiness.ownerRequired)})`,
-          status: readiness.ownerPendingProvision === 0 ? 'COMPLETO' : 'PENDIENTE',
-          notes: readiness.ownerPendingProvision === 0
-            ? 'Fondos efectivamente recibidos.'
-            : 'Si el propietario no provisiona, ajustar reparaciones/cargos al presupuesto disponible.'
+          name: `Provisión para reparaciones del propietario (${formatCLP(readiness.ownerRepairRequired)})`,
+          status: readiness.ownerRepairPendingProvision === 0 ? 'COMPLETO' : 'PENDIENTE',
+          notes: readiness.ownerRepairPendingProvision === 0
+            ? 'Fondos para reparaciones efectivamente recibidos.'
+            : 'Si el propietario no provisiona esta diferencia, debe ajustarse el alcance de las reparaciones al presupuesto disponible.'
         });
       }
 
+      // Un saldo de GC/servicios del propietario no se agrega al checklist bloqueante.
+      // Puede quedar vigente después de confirmar la liquidación.
       const nextRequirements = [...regularRequirements, ...fundingRequirements];
       const allDone = nextRequirements.length > 0 && nextRequirements.every(
         r => r.status === 'COMPLETO' || r.status === 'NO_APLICA'
