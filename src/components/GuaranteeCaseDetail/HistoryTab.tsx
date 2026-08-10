@@ -60,8 +60,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
   };
 
   const normalizeAuditLog = (log: AuditLog): HistoryEvent | null => {
-    // Estos eventos son persistencia técnica o duplican una acción que ya tiene
-    // un evento descriptivo. No aportan información al usuario final.
+    // Persistencia técnica y estados derivados no deben ocupar espacio en la bitácora visible.
     if (log.action === 'Actualización de Caso') return null;
     if (log.action === 'Seguimiento Registrado') return null;
     if (log.action === 'Preparación Actualizada') return null;
@@ -108,20 +107,13 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
       detail = 'Se eliminó una reparación del caso.';
     }
 
-    if (action === 'Cierre de Caso') {
-      detail = 'El caso fue cerrado.';
-    }
-
-    if (action === 'Reapertura de Caso') {
-      detail = 'El caso fue reabierto.';
-    }
-
-    const actorName = log.actorName || log.user;
+    if (action === 'Cierre de Caso') detail = 'El caso fue cerrado.';
+    if (action === 'Reapertura de Caso') detail = 'El caso fue reabierto.';
 
     return {
       id: log.id,
       timestamp: log.timestamp,
-      user: actorName,
+      user: log.actorName || log.user,
       userEmail: log.actorEmail,
       action,
       detail,
@@ -148,9 +140,19 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
 
   const sortedEvents = [...auditEvents, ...followUpEvents].sort((a, b) => b.sortValue - a.sortValue);
 
-  // Evita mostrar dos veces el mismo hecho cuando una acción antigua generó
-  // simultáneamente un evento genérico y uno descriptivo.
   const events = sortedEvents.filter((event, index, all) => {
+    // La creación de un cargo por reparación ya genera un evento descriptivo específico.
+    // Se oculta el "Cargo Creado" genérico ocurrido en el mismo instante.
+    if (event.action === 'Cargo Creado') {
+      const detailedRepairEvent = all.some(candidate =>
+        candidate.id !== event.id &&
+        candidate.action === 'Reparación incorporada' &&
+        candidate.user === event.user &&
+        Math.abs(candidate.sortValue - event.sortValue) <= 3000
+      );
+      if (detailedRepairEvent) return false;
+    }
+
     const duplicate = all.findIndex(candidate =>
       candidate.action === event.action &&
       candidate.detail === event.detail &&
