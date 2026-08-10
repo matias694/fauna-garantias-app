@@ -32,7 +32,8 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
     window.print();
   };
 
-  const ownerHasPendingProvision = ownerSettlement.ownerContributionPending > 0;
+  const ownerHasPendingRepairProvision = ownerSettlement.ownerRepairPending > 0;
+  const ownerHasPendingServices = ownerSettlement.ownerServicePending > 0;
   const hasFullBenefit = guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0;
   const ownerRequiredWithoutFull = ownerSettlement.ownerContributionRequired + fin.fullCoverageApplied;
 
@@ -164,31 +165,51 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               </div>
             )}
 
-            {ownerSettlement.ownerContributionRequired > 0 && (
+            {ownerSettlement.ownerRepairFundingRequired > 0 && (
               <div className="flex justify-between items-center text-xs text-amber-200 pt-1">
-                <span>Diferencia a cargo del propietario para completar la liquidación:</span>
-                <strong className="font-mono text-sm">{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>
+                <span>Diferencia de reparaciones a cargo del propietario:</span>
+                <strong className="font-mono text-sm">{formatCLP(ownerSettlement.ownerRepairFundingRequired)}</strong>
+              </div>
+            )}
+
+            {ownerSettlement.ownerServiceObligation > 0 && (
+              <div className="flex justify-between items-center text-xs text-amber-200 pt-1">
+                <span>Gastos comunes y servicios a cargo del propietario:</span>
+                <strong className="font-mono text-sm">{formatCLP(ownerSettlement.ownerServiceObligation)}</strong>
               </div>
             )}
 
             {ownerSettlement.ownerContributionApplied > 0 && (
               <div className="flex justify-between items-center text-xs text-blue-300 pt-1">
-                <span>(+) Fondos provisionados por el propietario aplicados a esta liquidación:</span>
+                <span>(+) Fondos efectivamente pagados/provisionados por el propietario:</span>
                 <strong className="font-mono text-sm">+{formatCLP(ownerSettlement.ownerContributionApplied)}</strong>
               </div>
             )}
 
             <div className="border-t border-slate-700 pt-3 flex justify-between items-center text-sm font-bold gap-4">
               <span>RESULTADO FINAL PROPIETARIO:</span>
-              {ownerHasPendingProvision ? (
+              {ownerHasPendingRepairProvision ? (
                 <span className="font-mono text-amber-300 text-right text-base">
-                  {formatCLP(ownerSettlement.ownerContributionPending)} PENDIENTE DE PROVISIÓN
+                  {formatCLP(ownerSettlement.ownerRepairPending)} PENDIENTE PARA REPARACIONES
+                </span>
+              ) : ownerHasPendingServices ? (
+                <span className="font-mono text-amber-300 text-right text-base">
+                  {formatCLP(ownerSettlement.ownerServicePending)} GC/SERVICIOS PENDIENTES
                 </span>
               ) : (
                 <span className="font-mono text-emerald-400 text-lg">$0 (Liquidación Cuadrada)</span>
               )}
             </div>
           </div>
+
+          {ownerHasPendingServices && !ownerHasPendingRepairProvision && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+              <strong className="block text-xs">Saldo pendiente de gastos comunes y/o servicios: {formatCLP(ownerSettlement.ownerServicePending)}</strong>
+              <p className="text-[11px] leading-relaxed mt-1">
+                Este saldo no afecta la cobertura de daños ni impide confirmar la liquidación. Permanecerá vigente hasta que sea pagado directamente por el propietario o pueda cubrirse con fondos posteriores de la propiedad.
+              </p>
+            </div>
+          )}
 
           {hasFullBenefit && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2 text-emerald-950">
