@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
 import { formatCLP, formatDate } from '../utils/formatters';
 import {
+  calculateFundingReadiness,
   calculateGuaranteeFinances,
   calculateOwnerLiquidationReconciliation
 } from '../utils/calculations';
@@ -25,6 +26,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   if (!isOpen) return null;
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const readiness = calculateFundingReadiness(guaranteeCase, settings);
   const ownerSettlement = calculateOwnerLiquidationReconciliation(guaranteeCase, settings);
   const todayStr = formatDate(new Date().toISOString().split('T')[0]);
   const ownerTotalPending = ownerSettlement.ownerRepairPending + ownerSettlement.ownerServicePending;
@@ -130,8 +132,14 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 )}
                 {ownerSettlement.ownerContributionApplied > 0 && (
                   <tr className="border-b border-slate-200">
-                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Fondos ya pagados/provisionados por el propietario</td>
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Fondos pagados/provisionados por el propietario</td>
                     <td className="p-2.5 text-right font-mono font-bold text-blue-700">+{formatCLP(ownerSettlement.ownerContributionApplied)}</td>
+                  </tr>
+                )}
+                {readiness.ownerServiceSettledFromTenant > 0 && (
+                  <tr className="border-b border-slate-200">
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Pago posterior del arrendatario aplicado a gastos comunes/servicios</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(readiness.ownerServiceSettledFromTenant)}</td>
                   </tr>
                 )}
                 {ownerSettlement.refundToTenant > 0 && (
