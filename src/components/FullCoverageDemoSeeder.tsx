@@ -39,7 +39,7 @@ export const FullCoverageDemoSeeder: React.FC = () => {
       preparationStatus: 'PENDIENTE',
       liquidationStatus: 'EN_PREPARACION',
       blockedBy: 'SIN_BLOQUEO',
-      nextManagement: 'Completar fondos y confirmar liquidación',
+      nextManagement: 'Provisionar fondos o ajustar reparaciones',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
     });
@@ -79,12 +79,12 @@ export const FullCoverageDemoSeeder: React.FC = () => {
           photos: []
         }
       ],
-      // La liquidación requiere $100.000 de provisión del propietario y permite hasta
-      // $400.000 de cobertura Full, pero parte sin fondos ni cobertura ejecutada.
+      // La cobertura Full se recalcula automáticamente según daños/reparaciones.
+      // En este caso alcanza el máximo de $400.000 y queda una provisión de $100.000.
       ownerContribution: 0,
       fullCoverageApplied: 400000,
       faunaFinancing: 0,
-      nextManagement: 'Completar fondos y confirmar liquidación',
+      nextManagement: 'Provisionar $100.000 o ajustar reparaciones',
       nextManagementDate: '09/08/2026',
       nextManagementResponsible: 'Gestor de Liquidaciones'
     });

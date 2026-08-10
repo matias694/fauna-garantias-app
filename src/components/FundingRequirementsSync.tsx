@@ -5,16 +5,13 @@ import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/
 import { formatCLP } from '../utils/formatters';
 
 const OWNER_PROVISION_REQ_ID = 'REQ-FUND-OWNER';
-const FULL_COVERAGE_REQ_ID = 'REQ-FUND-FULL';
+const LEGACY_FULL_COVERAGE_REQ_ID = 'REQ-FUND-FULL';
 
 /**
- * Convierte los fondos necesarios en requisitos reales de la liquidación.
- * Así una liquidación no pasa a LISTA solo por tener documentos completos:
- * si necesita dinero del propietario, la provisión debe haberse recibido;
- * y si existe cobertura Full, su ejecución efectiva debe estar registrada.
- *
- * Si el propietario no provisiona y se reducen las reparaciones/cargos, el cálculo
- * baja automáticamente y el requisito desaparece o se ajusta al nuevo monto.
+ * La única acción financiera que debe resolver el usuario antes de confirmar es
+ * una eventual provisión del propietario. La cobertura Plan Full se calcula y
+ * asigna automáticamente según los daños/reparaciones registrados, hasta el límite
+ * del plan. Si cambia el presupuesto antes de confirmar, la cobertura se recalcula.
  */
 export const FundingRequirementsSync: React.FC = () => {
   const { cases, settings, updateGuaranteeCase } = useApp();
@@ -24,10 +21,24 @@ export const FundingRequirementsSync: React.FC = () => {
       if (c.isClosed || c.liquidationStatus === 'EMITIDA') return;
 
       const fin = calculateGuaranteeFinances(c, settings);
-      const readiness = calculateFundingReadiness(c, settings);
       const regularRequirements = (c.requirements || []).filter(
-        r => r.id !== OWNER_PROVISION_REQ_ID && r.id !== FULL_COVERAGE_REQ_ID
+        r => r.id !== OWNER_PROVISION_REQ_ID && r.id !== LEGACY_FULL_COVERAGE_REQ_ID
       );
+      const regularRequirementsDone = regularRequirements.length > 0 && regularRequirements.every(
+        r => r.status === 'COMPLETO' || r.status === 'NO_APLICA'
+      );
+
+      // Full no exige una acción manual adicional: una vez listos los antecedentes,
+      // el sistema reserva/aplica solo la cobertura que corresponde al presupuesto actual.
+      const desiredFullCoverage = c.plan === 'FULL' && regularRequirementsDone
+        ? fin.fullCoverageApplied
+        : 0;
+      const coverageChanged = (c.faunaFinancing || 0) !== desiredFullCoverage;
+
+      const projectedCase = coverageChanged
+        ? { ...c, faunaFinancing: desiredFullCoverage }
+        : c;
+      const readiness = calculateFundingReadiness(projectedCase, settings);
       const fundingRequirements: LiquidationRequirement[] = [];
 
       if (fin.isInsufficient && readiness.ownerRequired > 0) {
@@ -37,18 +48,7 @@ export const FundingRequirementsSync: React.FC = () => {
           status: readiness.ownerPendingProvision === 0 ? 'COMPLETO' : 'PENDIENTE',
           notes: readiness.ownerPendingProvision === 0
             ? 'Fondos efectivamente recibidos.'
-            : 'No ejecutar gastos que excedan el presupuesto disponible. Si no se provisionan los fondos, ajustar reparaciones/cargos.'
-        });
-      }
-
-      if (fin.isInsufficient && c.plan === 'FULL' && readiness.fullCoverageRequired > 0) {
-        fundingRequirements.push({
-          id: FULL_COVERAGE_REQ_ID,
-          name: `Ejecución cobertura Plan Full (${formatCLP(readiness.fullCoverageRequired)})`,
-          status: readiness.fullCoveragePendingExecution === 0 ? 'COMPLETO' : 'PENDIENTE',
-          notes: readiness.fullCoveragePendingExecution === 0
-            ? 'Cobertura efectivamente ejecutada por Fauna.'
-            : 'Registrar solo cuando el desembolso de la cobertura haya ocurrido efectivamente.'
+            : 'Si el propietario no provisiona, ajustar reparaciones/cargos al presupuesto disponible.'
         });
       }
 
@@ -61,9 +61,10 @@ export const FundingRequirementsSync: React.FC = () => {
       const requirementsChanged = JSON.stringify(nextRequirements) !== JSON.stringify(c.requirements || []);
       const statusChanged = c.liquidationStatus !== nextStatus;
 
-      if (!requirementsChanged && !statusChanged) return;
+      if (!coverageChanged && !requirementsChanged && !statusChanged) return;
 
       updateGuaranteeCase(c.id, {
+        faunaFinancing: desiredFullCoverage,
         requirements: nextRequirements,
         liquidationStatus: nextStatus
       });
