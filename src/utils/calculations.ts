@@ -68,20 +68,27 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // Regla Plan Full: la cobertura adicional máxima equivale al 100% de la garantía.
-  // Se aplica únicamente a daños/reparaciones y después de aplicar la garantía a daños.
+  // Regla Plan Full:
+  // - la cobertura adicional máxima equivale al 100% de la garantía;
+  // - solo cubre daños/reparaciones;
+  // - la garantía base puede cubrir cualquier cargo, por lo que primero se reserva
+  //   para cargos que Full NO cubre (servicios/otros) y luego para daños.
+  // Así se usa correctamente el beneficio Full sin pedir provisión al propietario
+  // cuando garantía + cobertura alcanzan para el presupuesto total.
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
   let fullCoverageApplied = 0;
 
   if (c.plan === 'FULL' && isInsufficient) {
-    const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
+    const guaranteeForNonDamage = Math.min(guaranteeAmount, serviceCharges);
+    const guaranteeRemainingForDamage = Math.max(0, guaranteeAmount - guaranteeForNonDamage);
+    const guaranteeForDamage = Math.min(guaranteeRemainingForDamage, damageCharges);
     const uncoveredDamage = Math.max(0, damageCharges - guaranteeForDamage);
     fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
   }
 
   // Nombres internos legacy: ownerContributionRequired y faunaFinancingRequired.
   // Operativamente representan la diferencia que debe provisionar el propietario
-  // y la cobertura Full que Fauna debe ejecutar, respectivamente.
+  // y la cobertura Full que Fauna debe aplicar, respectivamente.
   const ownerContributionRequired = isInsufficient
     ? Math.max(0, tenantDeficit - fullCoverageApplied)
     : 0;
@@ -115,8 +122,8 @@ export function calculateGuaranteeFinances(
 /**
  * Determina si los fondos necesarios para sostener la liquidación ya ocurrieron.
  * Una promesa o aprobación del propietario no cuenta como fondos: solo una provisión
- * efectivamente recibida. Del mismo modo, la cobertura Full solo se considera ejecutada
- * cuando existe el desembolso/movimiento real de Fauna.
+ * efectivamente recibida. La cobertura Full puede ser asignada automáticamente según
+ * el presupuesto antes de confirmar la liquidación.
  */
 export function calculateFundingReadiness(
   c: GuaranteeCase,
