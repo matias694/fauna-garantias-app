@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { GuaranteeCase } from '../types';
+import { GuaranteeCase, RepairStatus } from '../types';
 import { formatCLP, formatDate } from '../utils/formatters';
 import {
   calculateGuaranteeFinances,
@@ -14,6 +14,13 @@ interface OwnerLiquidationDocModalProps {
   onClose: () => void;
   guaranteeCase: GuaranteeCase;
 }
+
+const repairStatusLabel = (status?: RepairStatus) => {
+  if (status === 'TERMINADA') return 'Terminada';
+  if (status === 'EN_EJECUCION') return 'En ejecución';
+  if (status === 'CANCELADA') return 'Cancelada';
+  return 'Pendiente';
+};
 
 export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> = ({
   isOpen = true,
@@ -34,8 +41,11 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
 
   const ownerHasPendingRepairProvision = ownerSettlement.ownerRepairPending > 0;
   const ownerHasPendingServices = ownerSettlement.ownerServicePending > 0;
+  const ownerTotalPending = ownerSettlement.ownerRepairPending + ownerSettlement.ownerServicePending;
   const hasFullBenefit = guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0;
-  const ownerRequiredWithoutFull = ownerSettlement.ownerContributionRequired + fin.fullCoverageApplied;
+  const repairCharges = (guaranteeCase.charges || []).filter(
+    charge => charge.amount > 0 && charge.type === 'DAÑO_REPARACION'
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -103,30 +113,33 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
             </div>
           </div>
 
-          {/* Relevant Repairs Executed */}
+          {/* Relevant Repairs */}
           <div className="space-y-3">
             <h4 className="font-bold text-slate-900 text-sm uppercase tracking-wider border-b border-slate-200 pb-1">
-              Reparaciones y Acondicionamiento de Salida Ejecutados
+              Reparaciones y Acondicionamiento de Salida
             </h4>
 
-            {guaranteeCase.repairs.length === 0 ? (
-              <p className="text-slate-500 italic">No fue necesario ejecutar reparaciones de salida.</p>
+            {repairCharges.length === 0 ? (
+              <p className="text-slate-500 italic">No se registraron cargos por reparaciones de salida.</p>
             ) : (
               <table className="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
                 <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
                   <tr>
-                    <th className="p-2.5">Trabajo Ejecutado</th>
-                    <th className="p-2.5">Categoría</th>
-                    <th className="p-2.5 text-right">Costo Final ($ CLP)</th>
+                    <th className="p-2.5">Trabajo / concepto</th>
+                    <th className="p-2.5">Estado</th>
+                    <th className="p-2.5 text-right">Monto ($ CLP)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {guaranteeCase.repairs.map(rep => (
-                    <tr key={rep.id}>
-                      <td className="p-2.5 font-medium text-slate-800">{rep.description}</td>
-                      <td className="p-2.5 text-slate-600">{rep.category}</td>
+                  {repairCharges.map(charge => (
+                    <tr key={charge.id}>
+                      <td className="p-2.5">
+                        <div className="font-medium text-slate-800">{charge.description}</div>
+                        {charge.notes && <div className="text-[10px] text-slate-500 mt-0.5">{charge.notes}</div>}
+                      </td>
+                      <td className="p-2.5 text-slate-600">{repairStatusLabel(charge.repairTracking?.status)}</td>
                       <td className="p-2.5 text-right font-mono font-bold text-slate-900">
-                        {formatCLP(rep.finalCost || rep.estimatedCost)}
+                        {formatCLP(charge.amount)}
                       </td>
                     </tr>
                   ))}
@@ -147,13 +160,27 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
             </div>
 
             <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-300">(-) Total Cargos / Reparaciones Cubiertas:</span>
+              <span className="text-slate-300">(-) Total cargos de la liquidación:</span>
               <strong className="font-mono text-sm text-rose-300">-{formatCLP(fin.totalCharges)}</strong>
             </div>
 
+            {fin.damageCharges > 0 && (
+              <div className="flex justify-between items-center text-[11px] pl-3">
+                <span className="text-slate-400">Daños y reparaciones:</span>
+                <strong className="font-mono text-slate-300">-{formatCLP(fin.damageCharges)}</strong>
+              </div>
+            )}
+
+            {fin.serviceCharges > 0 && (
+              <div className="flex justify-between items-center text-[11px] pl-3">
+                <span className="text-slate-400">Gastos comunes y servicios:</span>
+                <strong className="font-mono text-slate-300">-{formatCLP(fin.serviceCharges)}</strong>
+              </div>
+            )}
+
             {hasFullBenefit && (
               <div className="flex justify-between items-center text-xs text-purple-300 pt-1">
-                <span>(+) Beneficio Plan Full – cobertura adicional de daños:</span>
+                <span>(+) Plan Full – cobertura aplicada exclusivamente a daños:</span>
                 <strong className="font-mono text-sm">+{formatCLP(fin.fullCoverageApplied)}</strong>
               </div>
             )}
@@ -186,23 +213,42 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               </div>
             )}
 
-            <div className="border-t border-slate-700 pt-3 flex justify-between items-center text-sm font-bold gap-4">
-              <span>RESULTADO FINAL PROPIETARIO:</span>
-              {ownerHasPendingRepairProvision ? (
-                <span className="font-mono text-amber-300 text-right text-base">
-                  {formatCLP(ownerSettlement.ownerRepairPending)} PENDIENTE PARA REPARACIONES
-                </span>
-              ) : ownerHasPendingServices ? (
-                <span className="font-mono text-amber-300 text-right text-base">
-                  {formatCLP(ownerSettlement.ownerServicePending)} GC/SERVICIOS PENDIENTES
-                </span>
-              ) : (
-                <span className="font-mono text-emerald-400 text-lg">$0 (Liquidación Cuadrada)</span>
+            <div className="border-t border-slate-700 pt-3 space-y-1.5">
+              <div className="flex justify-between items-center text-sm font-bold gap-4">
+                <span>RESULTADO FINAL PROPIETARIO:</span>
+                {ownerTotalPending > 0 ? (
+                  <span className="font-mono text-amber-300 text-right text-base">
+                    {formatCLP(ownerTotalPending)} PENDIENTE DEL PROPIETARIO
+                  </span>
+                ) : (
+                  <span className="font-mono text-emerald-400 text-lg">$0 (Liquidación Cuadrada)</span>
+                )}
+              </div>
+
+              {ownerTotalPending > 0 && (
+                <div className="text-right text-[10px] text-slate-300">
+                  {ownerSettlement.ownerRepairPending > 0 && (
+                    <span>{formatCLP(ownerSettlement.ownerRepairPending)} reparaciones</span>
+                  )}
+                  {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 && <span> · </span>}
+                  {ownerSettlement.ownerServicePending > 0 && (
+                    <span>{formatCLP(ownerSettlement.ownerServicePending)} gastos comunes/servicios</span>
+                  )}
+                </div>
               )}
             </div>
           </div>
 
-          {ownerHasPendingServices && !ownerHasPendingRepairProvision && (
+          {ownerHasPendingRepairProvision && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+              <strong className="block text-xs">Fondos pendientes para reparaciones: {formatCLP(ownerSettlement.ownerRepairPending)}</strong>
+              <p className="text-[11px] leading-relaxed mt-1">
+                Este monto debe estar efectivamente provisionado para ejecutar las reparaciones que no alcanzan a cubrirse con la garantía y, cuando corresponda, con el Plan Full.
+              </p>
+            </div>
+          )}
+
+          {ownerHasPendingServices && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
               <strong className="block text-xs">Saldo pendiente de gastos comunes y/o servicios: {formatCLP(ownerSettlement.ownerServicePending)}</strong>
               <p className="text-[11px] leading-relaxed mt-1">
@@ -223,8 +269,18 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 </div>
               </div>
               <p className="text-xs leading-relaxed text-emerald-900">
-                Sin esta cobertura, la diferencia a cargo del propietario para completar esta liquidación habría sido de <strong>{formatCLP(ownerRequiredWithoutFull)}</strong>. Gracias al Plan Full, esa diferencia se redujo a <strong>{formatCLP(ownerSettlement.ownerContributionRequired)}</strong>.
+                El Plan Full redujo en <strong>{formatCLP(fin.fullCoverageApplied)}</strong> el monto que habría debido asumir el propietario por daños y reparaciones. Esta cobertura no se aplica a gastos comunes ni servicios, que se muestran por separado en la liquidación.
               </p>
+              {ownerTotalPending > 0 && (
+                <p className="text-[11px] leading-relaxed text-emerald-900 border-t border-emerald-200 pt-2">
+                  Obligación pendiente actual del propietario: <strong>{formatCLP(ownerTotalPending)}</strong>
+                  {ownerSettlement.ownerRepairPending > 0 || ownerSettlement.ownerServicePending > 0 ? ' (' : ''}
+                  {ownerSettlement.ownerRepairPending > 0 ? `${formatCLP(ownerSettlement.ownerRepairPending)} por reparaciones` : ''}
+                  {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 ? ' + ' : ''}
+                  {ownerSettlement.ownerServicePending > 0 ? `${formatCLP(ownerSettlement.ownerServicePending)} por gastos comunes/servicios` : ''}
+                  {ownerSettlement.ownerRepairPending > 0 || ownerSettlement.ownerServicePending > 0 ? ').' : ''}
+                </p>
+              )}
               <div className="flex items-center justify-between gap-4 border-t border-emerald-200 pt-2">
                 <span className="text-xs font-bold">Beneficio directo aplicado en esta salida:</span>
                 <strong className="font-mono text-base text-emerald-700">{formatCLP(fin.fullCoverageApplied)}</strong>
