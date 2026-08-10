@@ -2,12 +2,13 @@ import React from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
 import { formatCLP, formatDate } from '../utils/formatters';
-import { Banknote, CheckCircle2, ShieldCheck, WalletCards } from 'lucide-react';
+import { Banknote, CheckCircle2, Clock3, ShieldCheck, WalletCards } from 'lucide-react';
 
 /**
  * Resumen operativo para garantías insuficientes.
- * Muestra de forma explícita el orden real de aplicación:
- * garantía a daños -> Full al daño restante -> garantía sobrante a servicios -> propietario.
+ * Muestra el orden real de aplicación y, sobre todo, diferencia dos situaciones:
+ * - una diferencia en reparaciones SÍ debe resolverse antes de confirmar;
+ * - GC/servicios pendientes del propietario NO bloquean la liquidación.
  */
 export const FullCoverageCaseBanner: React.FC = () => {
   const {
@@ -32,56 +33,32 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
   const isFull = guaranteeCase.plan === 'FULL';
 
-  const guaranteeForDamage = Math.min(fin.guaranteeAmount, fin.damageCharges);
-  const guaranteeRemainingAfterDamage = Math.max(0, fin.guaranteeAmount - guaranteeForDamage);
-  const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, fin.serviceCharges);
+  const ownerProvisionForDamage = readiness.ownerRepairFundedTotal;
+  const ownerProvisionForServices = readiness.ownerServiceFundedTotal;
+  const damagePending = readiness.ownerRepairPendingProvision;
+  const servicesPending = readiness.ownerServicePending;
 
-  const damageOwnerRequired = Math.max(
-    0,
-    fin.damageCharges - guaranteeForDamage - fin.fullCoverageApplied
-  );
-  const servicesOwnerRequired = Math.max(
-    0,
-    fin.serviceCharges - guaranteeForServices
-  );
-
-  const ownerProvisionApplied = Math.min(readiness.ownerProvisionedTotal, readiness.ownerRequired);
-  const ownerProvisionForDamage = Math.min(ownerProvisionApplied, damageOwnerRequired);
-  const ownerProvisionForServices = Math.min(
-    Math.max(0, ownerProvisionApplied - ownerProvisionForDamage),
-    servicesOwnerRequired
-  );
-
-  const damagePending = Math.max(0, damageOwnerRequired - ownerProvisionForDamage);
-  const servicesPending = Math.max(0, servicesOwnerRequired - ownerProvisionForServices);
-  const missingFunds = readiness.ownerPendingProvision;
-
-  const registerOwnerProvision = () => {
-    if (isConfirmed || missingFunds <= 0) return;
+  const registerRepairProvision = () => {
+    if (isConfirmed || damagePending <= 0) return;
 
     const today = formatDate(new Date().toISOString().split('T')[0]);
     const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 
     updateGuaranteeCase(guaranteeCase.id, {
-      ownerContribution: (guaranteeCase.ownerContribution || 0) + missingFunds
+      ownerContribution: (guaranteeCase.ownerContribution || 0) + damagePending
     });
 
     addFinancialMovement(guaranteeCase.id, {
       date: today,
       time,
       type: 'APORTE_PROPIETARIO',
-      description: `Provisión de fondos recibida del propietario (${guaranteeCase.ownerName})`,
-      amount: missingFunds,
+      description: `Provisión para reparaciones recibida del propietario (${guaranteeCase.ownerName})`,
+      amount: damagePending,
       user: userRole,
-      reference: `PROVISION-PROP-${guaranteeCase.id}`,
-      observation: 'Fondos efectivamente recibidos para completar el presupuesto de salida'
+      reference: `PROVISION-REPARACIONES-${guaranteeCase.id}`,
+      observation: 'Fondos efectivamente recibidos para cubrir la diferencia de daños/reparaciones'
     });
   };
-
-  const ownerPendingDetail = [
-    damagePending > 0 ? `${formatCLP(damagePending)} en daños/reparaciones` : null,
-    servicesPending > 0 ? `${formatCLP(servicesPending)} en gastos comunes y servicios` : null
-  ].filter(Boolean).join(' + ');
 
   return (
     <div className="px-4 sm:px-6 pt-5 max-w-7xl mx-auto">
@@ -92,7 +69,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <div>
               <h3 className="font-extrabold text-sm">Cómo se cubre esta salida</h3>
               <p className="text-[11px] text-emerald-200">
-                Primero se usa la garantía en daños y reparaciones; {isFull ? 'si no alcanza, Plan Full cubre solo el daño restante. ' : ''}Después se cubren gastos comunes y servicios.
+                Primero se usa la garantía en daños y reparaciones; {isFull ? 'si no alcanza, Plan Full cubre solo el daño restante. ' : ''}Después se consideran gastos comunes y servicios.
               </p>
             </div>
           </div>
@@ -111,9 +88,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
               </div>
 
               <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
-                {guaranteeForDamage > 0 && (
+                {fin.guaranteeForDamage > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">
-                    Garantía <strong>{formatCLP(guaranteeForDamage)}</strong>
+                    Garantía <strong>{formatCLP(fin.guaranteeForDamage)}</strong>
                   </span>
                 )}
                 {isFull && fin.fullCoverageApplied > 0 && (
@@ -131,11 +108,11 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <div className="lg:w-48 shrink-0 lg:text-right">
                 {damagePending === 0 ? (
                   <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold">
-                    <CheckCircle2 className="w-4 h-4" /> Cubierto
+                    <CheckCircle2 className="w-4 h-4" /> Reparaciones cubiertas
                   </span>
                 ) : (
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Falta propietario</span>
+                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Falta para reparar</span>
                     <strong className="text-base font-black font-mono text-amber-100">{formatCLP(damagePending)}</strong>
                   </div>
                 )}
@@ -151,9 +128,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
               </div>
 
               <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
-                {guaranteeForServices > 0 ? (
+                {fin.guaranteeForServices > 0 ? (
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">
-                    Garantía sobrante <strong>{formatCLP(guaranteeForServices)}</strong>
+                    Garantía sobrante <strong>{formatCLP(fin.guaranteeForServices)}</strong>
                   </span>
                 ) : (
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-200">
@@ -162,7 +139,12 @@ export const FullCoverageCaseBanner: React.FC = () => {
                 )}
                 {ownerProvisionForServices > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">
-                    Propietario <strong>{formatCLP(ownerProvisionForServices)}</strong>
+                    Pagado por propietario <strong>{formatCLP(ownerProvisionForServices)}</strong>
+                  </span>
+                )}
+                {readiness.ownerServiceSettledFromTenant > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/30 border border-emerald-500/20">
+                    Cubierto posteriormente <strong>{formatCLP(readiness.ownerServiceSettledFromTenant)}</strong>
                   </span>
                 )}
               </div>
@@ -170,11 +152,11 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <div className="lg:w-48 shrink-0 lg:text-right">
                 {servicesPending === 0 ? (
                   <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold">
-                    <CheckCircle2 className="w-4 h-4" /> Cubierto
+                    <CheckCircle2 className="w-4 h-4" /> Sin saldo pendiente
                   </span>
                 ) : (
                   <div>
-                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Falta propietario</span>
+                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Pendiente propietario</span>
                     <strong className="text-base font-black font-mono text-amber-100">{formatCLP(servicesPending)}</strong>
                   </div>
                 )}
@@ -189,28 +171,45 @@ export const FullCoverageCaseBanner: React.FC = () => {
           </p>
         )}
 
-        {!isConfirmed && missingFunds > 0 && (
+        {!isConfirmed && damagePending > 0 && (
           <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div className="text-[11px] text-amber-100">
-              <strong className="block text-xs">Faltan {formatCLP(missingFunds)} del propietario para continuar.</strong>
-              {ownerPendingDetail && <span className="block mt-0.5">Corresponde a {ownerPendingDetail}.</span>}
-              <span className="block mt-1">Si no provisiona los fondos, ajusta los cargos al presupuesto disponible antes de confirmar la liquidación.</span>
+              <strong className="block text-xs">Faltan {formatCLP(damagePending)} para ejecutar las reparaciones.</strong>
+              <span className="block mt-0.5">Esta diferencia sí debe estar provisionada por el propietario antes de confirmar la liquidación.</span>
+              <span className="block mt-1">Si no provisiona, ajusta el alcance de las reparaciones al presupuesto efectivamente disponible.</span>
             </div>
             <button
               type="button"
-              onClick={registerOwnerProvision}
+              onClick={registerRepairProvision}
               className="shrink-0 px-4 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Banknote className="w-4 h-4" />
-              Registrar provisión {formatCLP(missingFunds)}
+              Registrar provisión {formatCLP(damagePending)}
             </button>
           </div>
         )}
 
-        {!isConfirmed && missingFunds === 0 && (
+        {servicesPending > 0 && (
+          <div className="bg-sky-300/10 border border-sky-300/25 rounded-xl p-3 flex items-start gap-2.5 text-[11px] text-sky-50">
+            <Clock3 className="w-4 h-4 shrink-0 mt-0.5 text-sky-200" />
+            <div>
+              <strong className="block text-xs">Quedan {formatCLP(servicesPending)} pendientes del propietario en gastos comunes y/o servicios.</strong>
+              <span className="block mt-0.5">
+                Este saldo no bloquea la liquidación ni obliga a reducir las reparaciones. Quedará vigente hasta que el propietario lo pague directamente o pueda cubrirse con fondos posteriores de la propiedad.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {!isConfirmed && damagePending === 0 && (
           <div className="bg-emerald-300/10 border border-emerald-300/30 rounded-xl px-3 py-2 text-[11px] text-emerald-100 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span><strong>Presupuesto completamente cubierto.</strong> Revisa la liquidación y confírmala cuando los cargos sean definitivos.</span>
+            <span>
+              <strong>Las reparaciones están cubiertas y la liquidación puede continuar.</strong>
+              {servicesPending > 0
+                ? ' El saldo de gastos comunes/servicios quedará registrado como pendiente del propietario.'
+                : ' Revisa la liquidación y confírmala cuando los cargos sean definitivos.'}
+            </span>
           </div>
         )}
       </section>
