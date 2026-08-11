@@ -4,7 +4,7 @@ export interface FinancialCalculationResult {
   guaranteeAmount: number;
   /** Cargos positivos antes de abonos. */
   grossCharges: number;
-  /** Abonos ya recibidos del arrendatario, sin importar su concepto informativo. */
+  /** Abonos ya recibidos del arrendatario. Se imputan primero a GC/servicios. */
   tenantCredits: number;
   /** Neto cargos - abonos. Puede ser negativo si hay más fondos abonados que cargos. */
   totalCharges: number;
@@ -14,18 +14,26 @@ export interface FinancialCalculationResult {
   guaranteeUsed: number;
   guaranteeForDamage: number;
   guaranteeForServices: number;
-  creditsForDamage: number;
+  /** Parte del abono proporcional usada primero en GC/servicios. */
   creditsForServices: number;
+  /** Excedente del abono aplicado a la diferencia de reparaciones después de Garantía + Full. */
+  creditsForDamage: number;
+  /** Excedente del abono que recupera inmediatamente parte de la cobertura Full ya aplicada. */
+  creditsForFaunaRecovery: number;
+  /** Abono que queda libre después de cubrir servicios y obligaciones de daño. */
+  tenantCreditsUnapplied: number;
   isSurplus: boolean;
   isExact: boolean;
   isInsufficient: boolean;
   refundToTenant: number;
   tenantDeficit: number;
   fullCoverageLimit: number;
+  /** Beneficio contractual aplicado a daños. No se reduce por el abono proporcional de servicios. */
   fullCoverageApplied: number;
   ownerRepairFundingRequired: number;
   ownerServiceObligation: number;
   ownerContributionRequired: number;
+  /** Desembolso neto de Fauna pendiente después de compensar excedentes del abono. */
   faunaFinancingRequired: number;
   tenantReceivableAmount: number;
 }
@@ -66,18 +74,20 @@ export interface OwnerLiquidationReconciliation {
 /**
  * Regla económica de cargos y abonos:
  * - CARGO: monto positivo que aumenta lo que debe cubrir la salida.
- * - ABONO: monto negativo que representa dinero ya recibido del arrendatario.
- *   Su categoría/concepto es solo informativa; financieramente entra a un fondo común.
+ * - ABONO: monto negativo que representa el proporcional de GC/servicios ya recibido
+ *   del arrendatario antes de su salida.
  *
- * Para conservar la prioridad contractual, los fondos del arrendatario se aplican así:
+ * Prioridad:
  * 1) garantía a daños/reparaciones;
- * 2) abonos del arrendatario al daño que aún quede descubierto;
- * 3) Plan Full, solo si todavía queda daño descubierto y hasta el límite permitido;
- * 4) garantía sobrante y abonos sobrantes a gastos comunes/servicios;
- * 5) cualquier diferencia restante corresponde al propietario según la naturaleza del gasto.
+ * 2) Plan Full, si corresponde, al daño restante (el abono de servicios no reduce el beneficio Full);
+ * 3) garantía sobrante a GC/servicios;
+ * 4) abono proporcional a GC/servicios;
+ * 5) si sobra abono, ese excedente compensa primero una diferencia de reparaciones del propietario
+ *    y luego recupera inmediatamente financiamiento Full;
+ * 6) solo después de compensar todo se determina devolución o cuenta por cobrar al arrendatario.
  *
- * Plan Full protege al propietario, pero no extingue la deuda del arrendatario: la cuenta
- * por cobrar se determina solo con cargos - garantía - abonos ya recibidos.
+ * De esta forma no se usa prematuramente un proporcional de servicios para financiar daños,
+ * pero tampoco se devuelve un excedente mientras exista otra deuda del arrendatario.
  */
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
@@ -117,38 +127,42 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // 1) Garantía primero a daños/reparaciones.
+  // 1) La garantía se aplica primero a daños/reparaciones.
   const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
   const guaranteeRemainingAfterDamage = Math.max(0, guaranteeAmount - guaranteeForDamage);
-
-  // 2) Los abonos son fondos generales del arrendatario y cubren el daño aún descubierto.
   const damageAfterGuarantee = Math.max(0, damageCharges - guaranteeForDamage);
-  const creditsForDamage = Math.min(tenantCredits, damageAfterGuarantee);
-  const creditsRemainingAfterDamage = Math.max(0, tenantCredits - creditsForDamage);
-  const damageAfterTenantFunds = Math.max(0, damageAfterGuarantee - creditsForDamage);
 
-  // 3) Full se activa solo sobre daño que siga efectivamente descubierto.
+  // 2) Full protege al propietario sobre el daño restante sin consumir antes el abono de servicios.
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
   const fullCoverageApplied = c.plan === 'FULL'
-    ? Math.min(fullCoverageLimit, damageAfterTenantFunds)
+    ? Math.min(fullCoverageLimit, damageAfterGuarantee)
     : 0;
+  const damageAfterGuaranteeAndFull = Math.max(0, damageAfterGuarantee - fullCoverageApplied);
 
-  const ownerRepairFundingRequired = Math.max(
-    0,
-    damageAfterTenantFunds - fullCoverageApplied
-  );
-
-  // 4) Fondos restantes del arrendatario cubren servicios/GC.
+  // 3) La garantía que sobra después de daños se usa en GC/servicios.
   const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, serviceCharges);
   const servicesAfterGuarantee = Math.max(0, serviceCharges - guaranteeForServices);
-  const creditsForServices = Math.min(creditsRemainingAfterDamage, servicesAfterGuarantee);
+
+  // 4) El abono proporcional se imputa primero a GC/servicios.
+  const creditsForServices = Math.min(tenantCredits, servicesAfterGuarantee);
+  let creditsRemaining = Math.max(0, tenantCredits - creditsForServices);
   const ownerServiceObligation = Math.max(0, servicesAfterGuarantee - creditsForServices);
+
+  // 5) Solo el excedente del abono puede pasar a daños. Respeta la prioridad de recuperación:
+  // propietario primero y Fauna después.
+  const creditsForDamage = Math.min(creditsRemaining, damageAfterGuaranteeAndFull);
+  creditsRemaining -= creditsForDamage;
+  const ownerRepairFundingRequired = Math.max(0, damageAfterGuaranteeAndFull - creditsForDamage);
+
+  const creditsForFaunaRecovery = Math.min(creditsRemaining, fullCoverageApplied);
+  creditsRemaining -= creditsForFaunaRecovery;
+  const faunaFinancingRequired = Math.max(0, fullCoverageApplied - creditsForFaunaRecovery);
+  const tenantCreditsUnapplied = creditsRemaining;
 
   const guaranteeUsed = guaranteeForDamage + guaranteeForServices;
   const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
-  const faunaFinancingRequired = fullCoverageApplied;
 
-  // La cobertura Full no reduce la deuda del arrendatario; sí lo hacen sus abonos previos.
+  // Full no extingue la deuda del arrendatario. Garantía y abonos previos sí reducen su saldo.
   const tenantReceivableAmount = tenantDeficit;
 
   return {
@@ -162,8 +176,10 @@ export function calculateGuaranteeFinances(
     guaranteeUsed,
     guaranteeForDamage,
     guaranteeForServices,
-    creditsForDamage,
     creditsForServices,
+    creditsForDamage,
+    creditsForFaunaRecovery,
+    tenantCreditsUnapplied,
     isSurplus,
     isExact,
     isInsufficient,
@@ -234,6 +250,8 @@ export function calculateFundingReadiness(
     ownerServiceRequired - ownerServiceFundedTotal - ownerServiceSettledFromTenant
   );
 
+  // La cobertura contractual puede ser mayor, pero solo el desembolso neto pendiente
+  // debe estar ejecutado/registrado por Fauna.
   const fullCoverageRequired = fin.faunaFinancingRequired;
   const fullCoveragePendingExecution = Math.max(0, fullCoverageRequired - fullCoverageExecutedTotal);
   const ownerPendingProvision = Math.max(
@@ -276,10 +294,12 @@ export function calculateOwnerLiquidationReconciliation(
     fin.ownerContributionRequired - ownerContributionApplied
   );
 
+  // Para cuadrar caja se usa el desembolso NETO de Fauna. El beneficio Full bruto
+  // puede mostrarse por separado en el documento como beneficio contractual.
   const reconciliationBalance =
     fin.guaranteeAmount
     - fin.totalCharges
-    + fin.fullCoverageApplied
+    + fin.faunaFinancingRequired
     + ownerContributionApplied
     - fin.refundToTenant;
 
