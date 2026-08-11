@@ -38,6 +38,10 @@ export interface FollowUpComment {
   nextManagementDate?: string;
   nextManagementResponsible?: string;
   nextManagementResponsibleUserId?: string;
+  originalComment?: string;
+  originalArea?: FollowUpArea;
+  editedAt?: string;
+  editedBy?: string;
 }
 
 export type RefundStatus = 'PENDIENTE' | 'TRANSFERIDA';
