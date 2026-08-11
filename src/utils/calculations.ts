@@ -85,9 +85,6 @@ export interface OwnerLiquidationReconciliation {
  * 5) si sobra abono, ese excedente compensa primero una diferencia de reparaciones del propietario
  *    y luego recupera inmediatamente financiamiento Full;
  * 6) solo después de compensar todo se determina devolución o cuenta por cobrar al arrendatario.
- *
- * De esta forma no se usa prematuramente un proporcional de servicios para financiar daños,
- * pero tampoco se devuelve un excedente mientras exista otra deuda del arrendatario.
  */
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
@@ -195,13 +192,21 @@ export function calculateGuaranteeFinances(
   };
 }
 
+const sumPositiveMovements = (c: GuaranteeCase, type: GuaranteeCase['movements'][number]['type']) =>
+  (c.movements || [])
+    .filter(m => m.type === type)
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+
 /**
  * Determina qué fondos son requisito para confirmar y qué montos pueden permanecer
- * como obligación posterior. Una promesa del propietario nunca cuenta como fondos.
+ * como obligación posterior.
  *
- * - Reparaciones no cubiertas: deben estar efectivamente provisionadas antes de confirmar.
- * - Gastos comunes/servicios no cubiertos: pueden quedar pendientes del propietario y
- *   NO bloquean la confirmación de la liquidación.
+ * Los pagos del propietario se mantienen en dos bolsas estructuradas:
+ * - REPARACIONES solo financia reparaciones;
+ * - SERVICIOS solo extingue la obligación de GC/servicios.
+ *
+ * Los movimientos antiguos sin purpose se conservan por compatibilidad y se asignan
+ * primero a reparaciones y luego a servicios, que era la regla histórica del prototipo.
  */
 export function calculateFundingReadiness(
   c: GuaranteeCase,
@@ -209,38 +214,39 @@ export function calculateFundingReadiness(
 ): FundingReadiness {
   const fin = calculateGuaranteeFinances(c, settings);
 
-  const ownerProvisionMovements = (c.movements || [])
-    .filter(m => m.type === 'APORTE_PROPIETARIO')
+  const ownerMovements = (c.movements || []).filter(m => m.type === 'APORTE_PROPIETARIO');
+  const ownerRecoveries = sumPositiveMovements(c, 'RECUPERACION_PROPIETARIO');
+
+  const explicitRepair = ownerMovements
+    .filter(m => m.ownerPaymentPurpose === 'REPARACIONES')
     .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const ownerRecoveries = (c.movements || [])
-    .filter(m => m.type === 'RECUPERACION_PROPIETARIO')
+  const explicitServices = ownerMovements
+    .filter(m => m.ownerPaymentPurpose === 'SERVICIOS')
+    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  const legacyOwnerFunds = ownerMovements
+    .filter(m => !m.ownerPaymentPurpose)
     .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
-  const fullCoverageExecutionMovements = (c.movements || [])
-    .filter(m => m.type === 'FINANCIAMIENTO_FAUNA')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const faunaRecoveries = (c.movements || [])
-    .filter(m => m.type === 'RECUPERACION_FAUNA')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-
-  const tenantUnallocatedPayments = (c.movements || [])
-    .filter(m => m.type === 'SALDO_PAGO_ARRENDATARIO')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-
-  const ownerProvisionedTotal = ownerProvisionMovements > 0
-    ? ownerProvisionMovements
-    : Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
-  const fullCoverageExecutedTotal = fullCoverageExecutionMovements > 0
-    ? fullCoverageExecutionMovements
-    : Math.max(0, (c.faunaFinancing || 0) + faunaRecoveries);
+  const ownerMovementsTotal = explicitRepair + explicitServices + legacyOwnerFunds;
+  const reconstructedLegacyTotal = Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
+  const ownerProvisionedTotal = ownerMovementsTotal > 0 ? ownerMovementsTotal : reconstructedLegacyTotal;
 
   const ownerRepairRequired = fin.ownerRepairFundingRequired;
-  const ownerRepairFundedTotal = Math.min(ownerProvisionedTotal, ownerRepairRequired);
+  const repairFromExplicit = Math.min(explicitRepair, ownerRepairRequired);
+  const repairLegacyCapacity = Math.max(0, ownerRepairRequired - repairFromExplicit);
+  const repairFromLegacy = Math.min(legacyOwnerFunds || (ownerMovementsTotal === 0 ? reconstructedLegacyTotal : 0), repairLegacyCapacity);
+  const ownerRepairFundedTotal = repairFromExplicit + repairFromLegacy;
   const ownerRepairPendingProvision = Math.max(0, ownerRepairRequired - ownerRepairFundedTotal);
 
   const ownerServiceRequired = fin.ownerServiceObligation;
-  const ownerFundsAvailableForServices = Math.max(0, ownerProvisionedTotal - ownerRepairFundedTotal);
-  const ownerServiceFundedTotal = Math.min(ownerFundsAvailableForServices, ownerServiceRequired);
+  const legacyPool = ownerMovementsTotal > 0 ? legacyOwnerFunds : reconstructedLegacyTotal;
+  const legacyRemainingAfterRepairs = Math.max(0, legacyPool - repairFromLegacy);
+  const ownerServiceFundedTotal = Math.min(
+    ownerServiceRequired,
+    explicitServices + legacyRemainingAfterRepairs
+  );
+
+  const tenantUnallocatedPayments = sumPositiveMovements(c, 'SALDO_PAGO_ARRENDATARIO');
   const ownerServiceSettledFromTenant = Math.min(
     Math.max(0, ownerServiceRequired - ownerServiceFundedTotal),
     tenantUnallocatedPayments
@@ -250,14 +256,15 @@ export function calculateFundingReadiness(
     ownerServiceRequired - ownerServiceFundedTotal - ownerServiceSettledFromTenant
   );
 
-  // La cobertura contractual puede ser mayor, pero solo el desembolso neto pendiente
-  // debe estar ejecutado/registrado por Fauna.
+  const fullCoverageExecutionMovements = sumPositiveMovements(c, 'FINANCIAMIENTO_FAUNA');
+  const faunaRecoveries = sumPositiveMovements(c, 'RECUPERACION_FAUNA');
+  const fullCoverageExecutedTotal = fullCoverageExecutionMovements > 0
+    ? fullCoverageExecutionMovements
+    : Math.max(0, (c.faunaFinancing || 0) + faunaRecoveries);
+
   const fullCoverageRequired = fin.faunaFinancingRequired;
   const fullCoveragePendingExecution = Math.max(0, fullCoverageRequired - fullCoverageExecutedTotal);
-  const ownerPendingProvision = Math.max(
-    0,
-    fin.ownerContributionRequired - ownerProvisionedTotal - tenantUnallocatedPayments
-  );
+  const ownerPendingProvision = ownerRepairPendingProvision + ownerServicePending;
 
   return {
     ownerRequired: fin.ownerContributionRequired,
@@ -273,7 +280,9 @@ export function calculateFundingReadiness(
     fullCoverageRequired,
     fullCoverageExecutedTotal,
     fullCoveragePendingExecution,
-    readyToConfirm: ownerRepairPendingProvision === 0 && fullCoveragePendingExecution === 0
+    // Plan Full es contractual y no requiere una segunda acción manual para habilitar la emisión.
+    // El desembolso/ledger se materializa al confirmar la liquidación.
+    readyToConfirm: ownerRepairPendingProvision === 0
   };
 }
 
@@ -285,17 +294,9 @@ export function calculateOwnerLiquidationReconciliation(
   const readiness = calculateFundingReadiness(c, settings);
 
   const ownerContributionFundedTotal = readiness.ownerProvisionedTotal;
-  const ownerContributionApplied = Math.min(
-    fin.ownerContributionRequired,
-    ownerContributionFundedTotal
-  );
-  const ownerContributionPending = Math.max(
-    0,
-    fin.ownerContributionRequired - ownerContributionApplied
-  );
+  const ownerContributionApplied = readiness.ownerRepairFundedTotal + readiness.ownerServiceFundedTotal;
+  const ownerContributionPending = readiness.ownerRepairPendingProvision + readiness.ownerServicePending;
 
-  // Para cuadrar caja se usa el desembolso NETO de Fauna. El beneficio Full bruto
-  // puede mostrarse por separado en el documento como beneficio contractual.
   const reconciliationBalance =
     fin.guaranteeAmount
     - fin.totalCharges
