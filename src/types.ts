@@ -340,9 +340,12 @@ export interface AuditLog {
 export interface SystemSettings {
   maxLiquidationDays: number;
   alertDay: number;
-  fullCoverageLimitMode: 'FIXED' | 'MONTHLY_RENT';
-  fullCoverageFixedLimit: number;
-  fullCoverageRentMultiplier: number;
+  /** @deprecated Plan Full usa siempre 100% del monto de la garantía. */
+  fullCoverageLimitMode?: 'FIXED' | 'MONTHLY_RENT';
+  /** @deprecated Conservado solo para leer datos antiguos del prototipo. */
+  fullCoverageFixedLimit?: number;
+  /** @deprecated Conservado solo para leer datos antiguos del prototipo. */
+  fullCoverageRentMultiplier?: number;
   faunaCompanyName: string;
   faunaRut: string;
   faunaAddress: string;

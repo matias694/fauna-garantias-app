@@ -47,10 +47,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!address.trim() || !tenantName.trim() || !ownerName.trim()) {
-      alert('Por favor complete la dirección de la propiedad, el arrendatario y el propietario.');
-      return;
-    }
+    if (!address.trim() || !tenantName.trim() || !ownerName.trim()) return;
 
     const created = createGuaranteeCase({
       propertyAddress: address,
