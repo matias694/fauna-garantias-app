@@ -273,7 +273,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
             <h3 className="font-bold text-slate-800 text-base">Cargos y abonos</h3>
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            Los cargos aumentan la liquidación y los abonos son fondos ya recibidos del arrendatario que se suman a su favor. El concepto del abono es solo una referencia informativa.
+            Registra los cargos definitivos y los abonos recibidos antes de confirmar la liquidación.
           </p>
         </div>
 
@@ -460,16 +460,6 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                 </div>
                 {editingCharge && <span className="text-[10px] text-slate-400 block mt-1">Para evitar inconsistencias, el tipo de un movimiento existente no se cambia al editar.</span>}
               </div>
-
-              {movementKind === 'ABONO' && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-900 flex items-start gap-2">
-                  <DollarSign className="w-4 h-4 mt-0.5 shrink-0" />
-                  <div>
-                    <strong className="block">El abono se suma como fondo a favor del arrendatario.</strong>
-                    <span className="text-[11px]">No necesita existir un cargo del mismo concepto. Usa el concepto solo para dejar una referencia, por ejemplo “Gastos comunes” o “Agua”.</span>
-                  </div>
-                </div>
-              )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Concepto {movementKind === 'ABONO' ? '(referencia)' : '*'}</label>

@@ -31,7 +31,8 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   const ownerSettlement = calculateOwnerLiquidationReconciliation(guaranteeCase, settings);
   const todayStr = formatDate(new Date().toISOString().split('T')[0]);
   const ownerTotalPending = ownerSettlement.ownerRepairPending + ownerSettlement.ownerServicePending;
-  const hasFullBenefit = guaranteeCase.plan === 'FULL' && fin.fullCoverageApplied > 0;
+  const ownerFullBenefit = fin.faunaFinancingRequired;
+  const hasFullBenefit = guaranteeCase.plan === 'FULL' && ownerFullBenefit > 0;
 
   const handleDownload = () => downloadOwnerLiquidationPdf(guaranteeCase, settings);
 
@@ -127,8 +128,8 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 </tr>
                 {hasFullBenefit && (
                   <tr className="border-b border-slate-200">
-                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Financiamiento neto Plan Full</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.faunaFinancingRequired)}</td>
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Beneficio Plan Full</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(ownerFullBenefit)}</td>
                   </tr>
                 )}
                 {ownerSettlement.ownerContributionApplied > 0 && (
@@ -176,8 +177,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               <div>
                 <span className="block text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Beneficio Plan Full aplicado</span>
                 <p className="text-xs leading-relaxed mt-0.5">
-                  La cobertura aplicada a daños fue de <strong>{formatCLP(fin.fullCoverageApplied)}</strong>. El Plan Full no cubre gastos comunes ni servicios.
-                  {fin.creditsForFaunaRecovery > 0 && <> Del excedente del abono proporcional, <strong>{formatCLP(fin.creditsForFaunaRecovery)}</strong> se compensaron contra este financiamiento, por lo que Fauna sostiene un neto de <strong>{formatCLP(fin.faunaFinancingRequired)}</strong>.</>}
+                  El Plan Full cubrió <strong>{formatCLP(ownerFullBenefit)}</strong> en daños y reparaciones. {ownerTotalPending > 0 ? <>Saldo pendiente del propietario: <strong>{formatCLP(ownerTotalPending)}</strong>.</> : 'No queda saldo pendiente por pagar.'}
                 </p>
               </div>
             </div>

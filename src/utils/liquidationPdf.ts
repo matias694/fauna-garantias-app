@@ -301,6 +301,7 @@ export const buildOwnerLiquidationPdf = (c: GuaranteeCase, settings: SystemSetti
   const readiness = calculateFundingReadiness(c, settings);
   const owner = calculateOwnerLiquidationReconciliation(c, settings);
   const ownerPending = owner.ownerRepairPending + owner.ownerServicePending;
+  const ownerFullBenefit = fin.faunaFinancingRequired;
   const pdf = new PdfLayout({
     title: 'LIQUIDACIÓN DE GARANTÍA',
     documentNumber: `LIQ-PROP-${c.id}`,
@@ -312,8 +313,8 @@ export const buildOwnerLiquidationPdf = (c: GuaranteeCase, settings: SystemSetti
   pdf.rule();
   pdf.totalRow('Total cargos y abonos', `-${formatCLP(fin.totalCharges)}`);
   pdf.totalRow('Garantía disponible del contrato', `+${formatCLP(fin.guaranteeAmount)}`, EMERALD);
-  if (c.plan === 'FULL' && fin.fullCoverageApplied > 0) {
-    pdf.totalRow('Cobertura Plan Full aplicada a daños', `+${formatCLP(fin.fullCoverageApplied)}`, EMERALD);
+  if (c.plan === 'FULL' && ownerFullBenefit > 0) {
+    pdf.totalRow('Beneficio Plan Full', `+${formatCLP(ownerFullBenefit)}`, EMERALD);
   }
   if (owner.ownerContributionApplied > 0) {
     pdf.totalRow('Fondos pagados/provisionados por propietario', `+${formatCLP(owner.ownerContributionApplied)}`, [0.12, 0.34, 0.66]);
@@ -337,10 +338,10 @@ export const buildOwnerLiquidationPdf = (c: GuaranteeCase, settings: SystemSetti
     pdf.gap(6);
   }
 
-  if (c.plan === 'FULL' && fin.fullCoverageApplied > 0) {
+  if (c.plan === 'FULL' && ownerFullBenefit > 0) {
     pdf.section('Beneficio Plan Full aplicado');
     pdf.wrapped(
-      `La cobertura aplicada redujo en ${formatCLP(fin.fullCoverageApplied)} lo que habría debido asumir el propietario por daños y reparaciones. El Plan Full no cubre gastos comunes ni servicios.`,
+      `El Plan Full cubrió ${formatCLP(ownerFullBenefit)} en daños y reparaciones. ${ownerPending > 0 ? `Saldo pendiente del propietario: ${formatCLP(ownerPending)}.` : 'No queda saldo pendiente por pagar.'}`,
       LEFT,
       RIGHT - LEFT,
       8.5,
