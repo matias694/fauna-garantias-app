@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
 import { formatCLP, formatDate } from '../utils/formatters';
-import { calculateGuaranteeFinances } from '../utils/calculations';
+import { calculateGuaranteeFinances, isChargeIncludedInLiquidation } from '../utils/calculations';
 import { printElementAsPdf } from '../utils/printElementAsPdf';
 import { FaunaIsotipo } from './FaunaBrand';
 import { X, Download, FileText } from 'lucide-react';
@@ -26,7 +26,7 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
   const liveFin = calculateGuaranteeFinances(guaranteeCase, settings);
   const snapshot = guaranteeCase.liquidationSnapshot;
   const isDraft = guaranteeCase.liquidationStatus !== 'EMITIDA' || !snapshot;
-  const charges = snapshot?.charges || guaranteeCase.charges;
+  const charges = (snapshot?.charges || guaranteeCase.charges).filter(isChargeIncludedInLiquidation);
   const issueDate = snapshot?.issuedDate || formatDate(new Date().toISOString().split('T')[0]);
   const documentNumber = snapshot?.tenantDocumentNumber || `LIQ-AR-${guaranteeCase.id}`;
 
