@@ -5,7 +5,8 @@ import { formatCLP, formatDate } from '../utils/formatters';
 import {
   calculateFundingReadiness,
   calculateGuaranteeFinances,
-  calculateOwnerLiquidationReconciliation
+  calculateOwnerLiquidationReconciliation,
+  isChargeIncludedInLiquidation
 } from '../utils/calculations';
 import { printElementAsPdf } from '../utils/printElementAsPdf';
 import { FaunaIsotipo } from './FaunaBrand';
@@ -33,7 +34,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   const snapshot = guaranteeCase.liquidationSnapshot;
   const isDraft = guaranteeCase.liquidationStatus !== 'EMITIDA' || !snapshot;
 
-  const charges = snapshot?.charges || guaranteeCase.charges;
+  const charges = (snapshot?.charges || guaranteeCase.charges).filter(isChargeIncludedInLiquidation);
   const issueDate = snapshot?.issuedDate || formatDate(new Date().toISOString().split('T')[0]);
   const documentNumber = snapshot?.ownerDocumentNumber || `LIQ-PROP-${guaranteeCase.id}`;
   const guaranteeAmount = snapshot?.financials.guaranteeAmount ?? liveFin.guaranteeAmount;
