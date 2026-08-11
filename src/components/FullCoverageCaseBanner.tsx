@@ -100,6 +100,8 @@ export const FullCoverageCaseBanner: React.FC = () => {
       date: formatDate(paymentDate),
       time,
       type: 'APORTE_PROPIETARIO',
+      ownerPaymentPurpose: paymentPurpose,
+      ownerPaymentMode: paymentMode,
       description: paymentMode === 'TRANSFERIDO_FAUNA'
         ? `Fondos recibidos de propietario para ${purposeLabel} (${guaranteeCase.ownerName})`
         : `Pago directo realizado por propietario para ${purposeLabel} (${guaranteeCase.ownerName})`,

@@ -17,7 +17,7 @@ export const Sidebar: React.FC = () => {
   const { activeView, setActiveView, setSelectedCaseId, userRole, setUserRole, cases, receivables } = useApp();
 
   const pendingGuarantees = cases.filter(c => !c.isClosed).length;
-  const pendingReceivables = receivables.filter(r => r.pendingBalance > 0).length;
+  const pendingReceivables = receivables.filter(r => r.pendingBalance > 0 && (r.status === 'PENDIENTE' || r.status === 'PAGO_PARCIAL')).length;
 
   const handleNav = (view: 'dashboard' | 'guarantees' | 'receivables' | 'settings') => {
     setSelectedCaseId(null);

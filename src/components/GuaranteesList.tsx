@@ -41,9 +41,13 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
     if (filterOutcome !== 'ALL') {
       if (c.liquidationStatus !== 'EMITIDA') return false;
       const fin = calculateGuaranteeFinances(c, settings);
-      if (filterOutcome === 'SOBRANTE' && !fin.isSurplus) return false;
-      if (filterOutcome === 'EXACTO' && !fin.isExact) return false;
-      if (filterOutcome === 'INSUFICIENTE' && !fin.isInsufficient) return false;
+      const frozen = c.liquidationSnapshot?.financials;
+      const isSurplus = frozen ? frozen.refundToTenant > 0 : fin.isSurplus;
+      const isInsufficient = frozen ? frozen.tenantDeficit > 0 : fin.isInsufficient;
+      const isExact = !isSurplus && !isInsufficient;
+      if (filterOutcome === 'SOBRANTE' && !isSurplus) return false;
+      if (filterOutcome === 'EXACTO' && !isExact) return false;
+      if (filterOutcome === 'INSUFICIENTE' && !isInsufficient) return false;
     }
 
     return true;

@@ -43,7 +43,7 @@ const conceptLabel = (category: ChargeCategory) => {
     ELECTRICIDAD: 'Electricidad',
     GAS: 'Gas',
     OTROS_SERVICIOS: 'Otros servicios',
-    OTRO: 'Otro'
+    OTRO: 'Otro (no daño / no Full)'
   };
   return labels[normalized] || 'Otro';
 };

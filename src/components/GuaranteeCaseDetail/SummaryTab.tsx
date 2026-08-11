@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase } from '../../types';
-import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput } from '../../utils/formatters';
+import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput, addDaysToDate } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Edit3 } from 'lucide-react';
@@ -30,11 +30,9 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
   const settlement = getSettlementState(guaranteeCase, receivable, settings);
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
-  const todayInput = new Date().toISOString().split('T')[0];
-  const deadlineInput = parseFormattedDateToInput(guaranteeCase.deadlineDate || '');
-  const alertInput = parseFormattedDateToInput(guaranteeCase.alertDate || '');
-  const isOverdue = Boolean(deadlineInput && todayInput > deadlineInput);
-  const isNearDeadline = Boolean(alertInput && todayInput >= alertInput && !isOverdue);
+  const currentDeadlineDate = addDaysToDate(guaranteeCase.receptionDate, settings.maxLiquidationDays);
+  const isOverdue = daysInProcess > settings.maxLiquidationDays;
+  const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
   const shouldShowDeadlineAlert = !guaranteeCase.isCompleted && !guaranteeCase.isClosed && (isOverdue || isNearDeadline);
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
 
@@ -153,7 +151,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
 
           <div className="flex items-center gap-3 text-[11px] text-slate-500">
             <span>Recepción <strong className="text-slate-700">{formatDate(guaranteeCase.receptionDate)}</strong></span>
-            <span>Límite <strong className="text-slate-700">{formatDate(guaranteeCase.deadlineDate)}</strong></span>
+            <span>Límite <strong className="text-slate-700">{formatDate(currentDeadlineDate)}</strong></span>
             {shouldShowDeadlineAlert && (
               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-bold ${isOverdue ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>
                 <AlertTriangle className="w-3 h-3" /> {isOverdue ? `Vencido · ${daysInProcess} días` : `Alerta · ${daysInProcess} días`}

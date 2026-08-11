@@ -3,9 +3,6 @@ import { GuaranteeCase, Receivable, SystemSettings, LiquidationRequirement } fro
 export const initialSettings: SystemSettings = {
   maxLiquidationDays: 60,
   alertDay: 45,
-  fullCoverageLimitMode: 'MONTHLY_RENT',
-  fullCoverageFixedLimit: 500000,
-  fullCoverageRentMultiplier: 1.0,
   faunaCompanyName: 'Fauna Propiedades SpA',
   faunaRut: '77.412.980-5',
   faunaAddress: 'Av. Providencia 2133, Of. 701, Providencia, Santiago',
