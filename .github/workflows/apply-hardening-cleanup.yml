@@ -1,0 +1,103 @@
+name: Aplicar limpieza final hardening
+
+on:
+  push:
+    branches: [hardening-ux-limpieza]
+    paths:
+      - .github/workflows/apply-hardening-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening-ux-limpieza
+
+      - name: Aplicar ajustes acotados
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'No se encontró bloque esperado en {path}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, count))
+
+          # Una sola fuente de verdad para los plazos operativos: SystemSettings.
+          replace(
+              'src/components/GuaranteeCaseDetail/SummaryTab.tsx',
+              "import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput } from '../../utils/formatters';",
+              "import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput, addDaysToDate } from '../../utils/formatters';"
+          )
+          replace(
+              'src/components/GuaranteeCaseDetail/SummaryTab.tsx',
+              "  const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);\n  const todayInput = new Date().toISOString().split('T')[0];\n  const deadlineInput = parseFormattedDateToInput(guaranteeCase.deadlineDate || '');\n  const alertInput = parseFormattedDateToInput(guaranteeCase.alertDate || '');\n  const isOverdue = Boolean(deadlineInput && todayInput > deadlineInput);\n  const isNearDeadline = Boolean(alertInput && todayInput >= alertInput && !isOverdue);",
+              "  const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);\n  const currentDeadlineDate = addDaysToDate(guaranteeCase.receptionDate, settings.maxLiquidationDays);\n  const isOverdue = daysInProcess > settings.maxLiquidationDays;\n  const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;"
+          )
+          replace(
+              'src/components/GuaranteeCaseDetail/SummaryTab.tsx',
+              "<span>Límite <strong className=\"text-slate-700\">{formatDate(guaranteeCase.deadlineDate)}</strong></span>",
+              "<span>Límite <strong className=\"text-slate-700\">{formatDate(currentDeadlineDate)}</strong></span>"
+          )
+
+          # El formulario ya usa required: no recurrir a alert() del navegador.
+          replace(
+              'src/components/NewGuaranteeModal.tsx',
+              "    if (!address.trim() || !tenantName.trim() || !ownerName.trim()) {\n      alert('Por favor complete la dirección de la propiedad, el arrendatario y el propietario.');\n      return;\n    }",
+              "    if (!address.trim() || !tenantName.trim() || !ownerName.trim()) return;"
+          )
+
+          # Guardar destino/modalidad del aporte de forma estructurada, no inferida desde texto.
+          replace(
+              'src/components/FullCoverageCaseBanner.tsx',
+              "      type: 'APORTE_PROPIETARIO',\n      description:",
+              "      type: 'APORTE_PROPIETARIO',\n      ownerPaymentPurpose: paymentPurpose,\n      ownerPaymentMode: paymentMode,\n      description:"
+          )
+
+          # Campos Full legacy quedan solo para compatibilidad con localStorage/datos viejos.
+          replace(
+              'src/types.ts',
+              "  fullCoverageLimitMode: 'FIXED' | 'MONTHLY_RENT';\n  fullCoverageFixedLimit: number;\n  fullCoverageRentMultiplier: number;",
+              "  /** @deprecated Plan Full usa siempre 100% del monto de la garantía. */\n  fullCoverageLimitMode?: 'FIXED' | 'MONTHLY_RENT';\n  /** @deprecated Conservado solo para leer datos antiguos del prototipo. */\n  fullCoverageFixedLimit?: number;\n  /** @deprecated Conservado solo para leer datos antiguos del prototipo. */\n  fullCoverageRentMultiplier?: number;"
+          )
+          replace(
+              'src/data/initialData.ts',
+              "  fullCoverageLimitMode: 'MONTHLY_RENT',\n  fullCoverageFixedLimit: 500000,\n  fullCoverageRentMultiplier: 1.0,\n",
+              ""
+          )
+
+          # “Otro” tiene semántica explícita: no es daño y no recibe Full.
+          replace(
+              'src/components/GuaranteeCaseDetail/ChargesTab.tsx',
+              "    OTRO: 'Otro'",
+              "    OTRO: 'Otro (no daño / no Full)'"
+          )
+
+          # El contador lateral muestra solo cobranzas activas, no incobrables.
+          replace(
+              'src/components/Sidebar.tsx',
+              "  const pendingReceivables = receivables.filter(r => r.pendingBalance > 0).length;",
+              "  const pendingReceivables = receivables.filter(r => r.pendingBalance > 0 && (r.status === 'PENDIENTE' || r.status === 'PAGO_PARCIAL')).length;"
+          )
+
+          # Filtros históricos usan el resultado emitido cuando existe snapshot.
+          replace(
+              'src/components/GuaranteesList.tsx',
+              "      const fin = calculateGuaranteeFinances(c, settings);\n      if (filterOutcome === 'SOBRANTE' && !fin.isSurplus) return false;\n      if (filterOutcome === 'EXACTO' && !fin.isExact) return false;\n      if (filterOutcome === 'INSUFICIENTE' && !fin.isInsufficient) return false;",
+              "      const fin = calculateGuaranteeFinances(c, settings);\n      const frozen = c.liquidationSnapshot?.financials;\n      const isSurplus = frozen ? frozen.refundToTenant > 0 : fin.isSurplus;\n      const isInsufficient = frozen ? frozen.tenantDeficit > 0 : fin.isInsufficient;\n      const isExact = !isSurplus && !isInsufficient;\n      if (filterOutcome === 'SOBRANTE' && !isSurplus) return false;\n      if (filterOutcome === 'EXACTO' && !isExact) return false;\n      if (filterOutcome === 'INSUFICIENTE' && !isInsufficient) return false;"
+          )
+          PY
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          git commit -m "Apply remaining UX and legacy cleanup [skip ci]"
+          git push origin HEAD:hardening-ux-limpieza
