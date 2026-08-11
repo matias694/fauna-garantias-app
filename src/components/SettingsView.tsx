@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Settings as SettingsIcon, Save, Users, ShieldCheck, Clock, ShieldAlert } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Users, ShieldCheck, Clock, ShieldAlert, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
   const { settings, updateSettings, userRole, setUserRole } = useApp();
@@ -8,22 +8,27 @@ export const SettingsView: React.FC = () => {
   const [maxLiquidationDays, setMaxLiquidationDays] = useState(settings.maxLiquidationDays);
   const [alertDay, setAlertDay] = useState(settings.alertDay);
   const [newRespName, setNewRespName] = useState('');
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (alertDay > maxLiquidationDays) {
+      setFeedback({ type: 'error', text: 'El día de alerta no puede ser posterior al plazo máximo de liquidación.' });
+      return;
+    }
     updateSettings({
       ...settings,
       maxLiquidationDays,
       alertDay
     });
-    alert('Configuración guardada correctamente.');
+    setFeedback({ type: 'success', text: 'Configuración guardada correctamente.' });
   };
 
   const handleAddResponsible = () => {
     const name = newRespName.trim();
     if (!name) return;
     if (settings.responsiblesList.includes(name)) {
-      alert('Este responsable ya existe.');
+      setFeedback({ type: 'error', text: 'Este responsable ya existe.' });
       return;
     }
 
@@ -32,6 +37,7 @@ export const SettingsView: React.FC = () => {
       responsiblesList: [...settings.responsiblesList, name]
     });
     setNewRespName('');
+    setFeedback({ type: 'success', text: `Responsable “${name}” agregado.` });
   };
 
   const handleRemoveResponsible = (name: string) => {
@@ -39,6 +45,7 @@ export const SettingsView: React.FC = () => {
       ...settings,
       responsiblesList: settings.responsiblesList.filter(r => r !== name)
     });
+    setFeedback({ type: 'success', text: `Responsable “${name}” eliminado de las opciones futuras.` });
   };
 
   return (
@@ -60,6 +67,13 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
+      {feedback && (
+        <div className={`rounded-xl border p-3 flex items-start gap-2 ${feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+          {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />}
+          <span>{feedback.text}</span>
+        </div>
+      )}
+
       <form onSubmit={handleSave} className="space-y-6">
         <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
           <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-100 pb-2">
@@ -75,7 +89,7 @@ export const SettingsView: React.FC = () => {
                 min="1"
                 required
                 value={maxLiquidationDays}
-                onChange={(e) => setMaxLiquidationDays(Number(e.target.value))}
+                onChange={(e) => { setMaxLiquidationDays(Number(e.target.value)); setFeedback(null); }}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold"
               />
             </div>
@@ -87,7 +101,7 @@ export const SettingsView: React.FC = () => {
                 min="1"
                 required
                 value={alertDay}
-                onChange={(e) => setAlertDay(Number(e.target.value))}
+                onChange={(e) => { setAlertDay(Number(e.target.value)); setFeedback(null); }}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-xs font-bold"
               />
               <span className="text-[10px] text-slate-500 block mt-1">
@@ -106,7 +120,7 @@ export const SettingsView: React.FC = () => {
           <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-purple-950">
             <strong className="block text-sm">Cobertura adicional máxima = 100% del monto de la garantía</strong>
             <p className="text-xs mt-1 leading-relaxed">
-              La cobertura Full no se configura como un monto fijo ni como un mes de arriendo. Se calcula automáticamente para cada contrato y se aplica únicamente a daños o reparaciones cubiertas.
+              La cobertura Full se calcula automáticamente para cada contrato y se aplica únicamente a daños o reparaciones cubiertas.
             </p>
           </div>
         </section>
@@ -122,7 +136,7 @@ export const SettingsView: React.FC = () => {
               type="text"
               placeholder="Agregar responsable..."
               value={newRespName}
-              onChange={(e) => setNewRespName(e.target.value)}
+              onChange={(e) => { setNewRespName(e.target.value); setFeedback(null); }}
               className="flex-1 bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
             />
             <button
