@@ -12,7 +12,9 @@ const LEGACY_FULL_COVERAGE_REQ_ID = 'REQ-FUND-FULL';
  * exige provisión efectiva. Los gastos comunes y servicios que queden sin fondos no
  * bloquean la liquidación: permanecen como obligación vigente del propietario.
  *
- * La cobertura Plan Full se calcula y asigna automáticamente según el daño registrado.
+ * Plan Full mantiene su beneficio contractual sobre daños, pero faunaFinancing guarda
+ * el desembolso NETO que Fauna debe sostener después de compensar cualquier excedente
+ * del abono proporcional del arrendatario.
  */
 export const FundingRequirementsSync: React.FC = () => {
   const { cases, settings, updateGuaranteeCase } = useApp();
@@ -29,15 +31,15 @@ export const FundingRequirementsSync: React.FC = () => {
         r => r.status === 'COMPLETO' || r.status === 'NO_APLICA'
       );
 
-      // Full no exige una acción manual adicional: una vez listos los antecedentes,
-      // el sistema reserva/aplica solo la cobertura que corresponde al presupuesto actual.
-      const desiredFullCoverage = c.plan === 'FULL' && regularRequirementsDone
-        ? fin.fullCoverageApplied
+      // Full no exige una acción manual adicional. Una vez listos los antecedentes,
+      // el sistema registra solo el financiamiento neto que Fauna realmente debe sostener.
+      const desiredFaunaFinancing = c.plan === 'FULL' && regularRequirementsDone
+        ? fin.faunaFinancingRequired
         : 0;
-      const coverageChanged = (c.faunaFinancing || 0) !== desiredFullCoverage;
+      const financingChanged = (c.faunaFinancing || 0) !== desiredFaunaFinancing;
 
-      const projectedCase = coverageChanged
-        ? { ...c, faunaFinancing: desiredFullCoverage }
+      const projectedCase = financingChanged
+        ? { ...c, faunaFinancing: desiredFaunaFinancing }
         : c;
       const readiness = calculateFundingReadiness(projectedCase, settings);
       const fundingRequirements: LiquidationRequirement[] = [];
@@ -65,10 +67,10 @@ export const FundingRequirementsSync: React.FC = () => {
       const requirementsChanged = JSON.stringify(nextRequirements) !== JSON.stringify(c.requirements || []);
       const statusChanged = c.liquidationStatus !== nextStatus;
 
-      if (!coverageChanged && !requirementsChanged && !statusChanged) return;
+      if (!financingChanged && !requirementsChanged && !statusChanged) return;
 
       updateGuaranteeCase(c.id, {
-        faunaFinancing: desiredFullCoverage,
+        faunaFinancing: desiredFaunaFinancing,
         requirements: nextRequirements,
         liquidationStatus: nextStatus
       });
