@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
 import { formatCLP, formatDate } from '../utils/formatters';
@@ -7,7 +7,7 @@ import {
   calculateGuaranteeFinances,
   calculateOwnerLiquidationReconciliation
 } from '../utils/calculations';
-import { downloadOwnerLiquidationPdf } from '../utils/liquidationPdf';
+import { printElementAsPdf } from '../utils/printElementAsPdf';
 import { FaunaIsotipo } from './FaunaBrand';
 import { X, Download, FileText, ShieldCheck } from 'lucide-react';
 
@@ -23,6 +23,7 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   guaranteeCase
 }) => {
   const { settings } = useApp();
+  const documentRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen) return null;
 
@@ -34,11 +35,14 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
   const ownerFullBenefit = fin.faunaFinancingRequired;
   const hasFullBenefit = guaranteeCase.plan === 'FULL' && ownerFullBenefit > 0;
 
-  const handleDownload = () => downloadOwnerLiquidationPdf(guaranteeCase, settings);
+  const handleDownload = () => printElementAsPdf(
+    documentRef.current,
+    `Liquidacion_propietario_${guaranteeCase.id}`
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-6 overflow-hidden border border-slate-200 flex flex-col max-h-[95vh]">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-[794px] w-full my-6 overflow-hidden border border-slate-200 flex flex-col max-h-[95vh]">
         <div className="bg-[#1E382B] text-white p-4 flex items-center justify-between border-b border-emerald-900 print:hidden">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-emerald-400" />
@@ -46,13 +50,13 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handleDownload} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs">
-              <Download className="w-4 h-4" /> Descargar PDF
+              <Download className="w-4 h-4" /> Guardar PDF
             </button>
             <button onClick={onClose} className="p-1 text-slate-300 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
         </div>
 
-        <div className="p-8 space-y-6 overflow-y-auto font-sans text-slate-800 text-xs bg-white print:p-0 print:overflow-visible">
+        <div ref={documentRef} className="p-8 space-y-6 overflow-y-auto font-sans text-slate-800 text-xs bg-white print:p-0 print:overflow-visible">
           <div className="flex items-start justify-between border-b border-slate-200 pb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#1E382B] text-white flex items-center justify-center p-2">
