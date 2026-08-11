@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase } from '../../types';
-import { formatCLP, formatDate, calculateDaysDifference } from '../../utils/formatters';
+import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Edit3 } from 'lucide-react';
@@ -14,14 +14,14 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const { addFollowUpComment, settings, receivables } = useApp();
 
   const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || '');
-  const [nextDate, setNextDate] = useState(guaranteeCase.nextManagementDate || '');
+  const [nextDate, setNextDate] = useState(parseFormattedDateToInput(guaranteeCase.nextManagementDate || ''));
   const [nextResp, setNextResp] = useState(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
   const [editingNextManagement, setEditingNextManagement] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     setNextManagement(guaranteeCase.nextManagement || '');
-    setNextDate(guaranteeCase.nextManagementDate || '');
+    setNextDate(parseFormattedDateToInput(guaranteeCase.nextManagementDate || ''));
     setNextResp(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
   }, [guaranteeCase.id, guaranteeCase.nextManagement, guaranteeCase.nextManagementDate, guaranteeCase.nextManagementResponsible, guaranteeCase.responsible]);
 
@@ -86,12 +86,12 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
     e.preventDefault();
 
     const oldManagement = guaranteeCase.nextManagement || '';
-    const oldDate = guaranteeCase.nextManagementDate || '';
+    const oldDate = parseFormattedDateToInput(guaranteeCase.nextManagementDate || '');
     const oldResp = guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '';
     const changes: string[] = [];
 
     if (oldManagement !== nextManagement) changes.push(`Gestión: “${oldManagement || 'Sin gestión'}” → “${nextManagement}”`);
-    if (oldDate !== nextDate) changes.push(`Fecha: ${oldDate || 'Sin fecha'} → ${nextDate || 'Sin fecha'}`);
+    if (oldDate !== nextDate) changes.push(`Fecha: ${oldDate ? formatDate(oldDate) : 'Sin fecha'} → ${nextDate ? formatDate(nextDate) : 'Sin fecha'}`);
     if (oldResp !== nextResp) changes.push(`Responsable: ${oldResp || 'Sin responsable'} → ${nextResp || 'Sin responsable'}`);
 
     if (changes.length > 0) {
@@ -172,9 +172,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
 
           <div className="p-4">
             <span className="text-[9px] font-bold text-slate-400 uppercase block">{isConfirmed ? 'Estado actual' : 'Resultado proyectado'}</span>
-            <strong className={`text-lg font-black ${resultColorClass}`}>
-              {resultLabel}
-            </strong>
+            <strong className={`text-lg font-black ${resultColorClass}`}>{resultLabel}</strong>
             {(settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL') && (
               <span className="text-[10px] text-rose-600 font-bold block">Pagado {formatCLP(settlement.paidAmount)} · saldo {formatCLP(settlement.pendingAmount)}</span>
             )}
@@ -205,7 +203,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-slate-500 mb-1">Fecha</label>
-              <input type="text" placeholder="DD/MM/AAAA" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs" />
+              <input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs" />
             </div>
             <div>
               <label className="block text-[10px] font-semibold text-slate-500 mb-1">Responsable</label>
@@ -224,7 +222,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
             <div className="min-w-0">
               <span className="text-[9px] uppercase font-bold text-slate-400 block">Próxima gestión</span>
               <strong className="text-sm text-slate-800 block truncate">{guaranteeCase.nextManagement || 'Sin próxima gestión programada'}</strong>
-              <span className="text-[10px] text-slate-500">{guaranteeCase.nextManagementDate || 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}</span>
+              <span className="text-[10px] text-slate-500">{guaranteeCase.nextManagementDate ? formatDate(guaranteeCase.nextManagementDate) : 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}</span>
             </div>
             <button type="button" onClick={() => setEditingNextManagement(true)} className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer">
               <Edit3 className="w-3.5 h-3.5" /> Editar
