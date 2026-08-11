@@ -28,7 +28,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
-  const [refundDate, setRefundDate] = useState(formatDate(new Date().toISOString().split('T')[0]));
+  const [refundDate, setRefundDate] = useState(new Date().toISOString().split('T')[0]);
   const [refundVoucher, setRefundVoucher] = useState('');
   const [refundAccount, setRefundAccount] = useState(guaranteeCase.refund?.destinationAccount || '');
   const [refundNotes, setRefundNotes] = useState('');
@@ -357,7 +357,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Fecha *</label>
-                <input type="text" required placeholder="DD/MM/AAAA" value={refundDate} onChange={(e) => setRefundDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
+                <input type="date" required value={refundDate} onChange={(e) => setRefundDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Cuenta destino</label>
