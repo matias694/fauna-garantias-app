@@ -76,6 +76,8 @@ export interface OwnerLiquidationReconciliation {
  * - CARGO: monto positivo que aumenta lo que debe cubrir la salida.
  * - ABONO: monto negativo que representa el proporcional de GC/servicios ya recibido
  *   del arrendatario antes de su salida.
+ * - Una reparación CANCELADA deja de formar parte del resultado económico. Si existe
+ *   una indemnización que deba mantenerse, debe registrarse como un cargo vigente separado.
  *
  * Prioridad:
  * 1) garantía a daños/reparaciones;
@@ -105,6 +107,7 @@ export function calculateGuaranteeFinances(
     }
 
     if (amount <= 0) return;
+    if (ch.type === 'DAÑO_REPARACION' && ch.repairTracking?.status === 'CANCELADA') return;
 
     if (ch.type === 'DAÑO_REPARACION') {
       damageCharges += amount;
