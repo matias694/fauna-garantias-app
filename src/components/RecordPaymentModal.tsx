@@ -152,7 +152,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
             </button>
             {showDistribution && (
               <div className="p-3 space-y-1.5 text-xs bg-white">
-                <div className="flex justify-between"><span>1. Recuperar aporte propietario</span><strong className="font-mono text-blue-900">{formatCLP(dist.ownerRecovery)}</strong></div>
+                <div className="flex justify-between"><span>1. Recuperar monto asumido por propietario</span><strong className="font-mono text-blue-900">{formatCLP(dist.ownerRecovery)}</strong></div>
                 <div className="flex justify-between"><span>2. Recuperar financiamiento Fauna</span><strong className="font-mono text-emerald-900">{formatCLP(dist.faunaRecovery)}</strong></div>
                 <div className="flex justify-between pt-2 border-t border-slate-100 font-bold"><span>Nuevo saldo arrendatario</span><span className="font-mono text-rose-800">{formatCLP(newPending)}</span></div>
               </div>
