@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
 import { formatCLP, formatDate } from '../../utils/formatters';
@@ -25,8 +25,6 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
   const [newReqName, setNewReqName] = useState('');
   const [showAddReq, setShowAddReq] = useState(false);
-  const [blockedNotes, setBlockedNotes] = useState(guaranteeCase.blockedReasonNotes || '');
-  const [blockSaved, setBlockSaved] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
@@ -34,11 +32,6 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   const [refundVoucher, setRefundVoucher] = useState('');
   const [refundAccount, setRefundAccount] = useState(guaranteeCase.refund?.destinationAccount || '');
   const [refundNotes, setRefundNotes] = useState('');
-
-  useEffect(() => {
-    setBlockedNotes(guaranteeCase.blockedReasonNotes || '');
-    setBlockSaved(false);
-  }, [guaranteeCase.id, guaranteeCase.blockedReasonNotes]);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
@@ -80,20 +73,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
   const handleBlockedByChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value as BlockedByReason;
-    const notes = val === 'SIN_BLOQUEO' ? '' : blockedNotes;
-    if (val === 'SIN_BLOQUEO') setBlockedNotes('');
-    setBlockSaved(false);
-    changeLiquidationStatus(guaranteeCase.id, guaranteeCase.liquidationStatus, val, notes);
-  };
-
-  const handleSaveBlockedNotes = () => {
-    changeLiquidationStatus(
-      guaranteeCase.id,
-      guaranteeCase.liquidationStatus,
-      guaranteeCase.blockedBy,
-      blockedNotes.trim()
-    );
-    setBlockSaved(true);
+    changeLiquidationStatus(guaranteeCase.id, guaranteeCase.liquidationStatus, val, '');
   };
 
   const handleConfirmLiquidation = () => {
@@ -148,24 +128,6 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             </select>
           </div>
         </div>
-
-        {guaranteeCase.blockedBy !== 'SIN_BLOQUEO' && (
-          <div className="border-t border-amber-100 bg-amber-50 p-3 flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
-            <input
-              type="text"
-              value={blockedNotes}
-              onChange={(e) => { setBlockedNotes(e.target.value); setBlockSaved(false); }}
-              placeholder="Indica qué está impidiendo avanzar..."
-              className="flex-1 bg-white border border-amber-300 rounded-lg p-2 text-xs"
-            />
-            <button onClick={handleSaveBlockedNotes} className="px-3 py-1.5 bg-amber-800 text-white font-bold rounded-lg cursor-pointer">Guardar</button>
-            {blockSaved && (
-              <span className="text-[11px] text-emerald-800 font-bold inline-flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Guardado
-              </span>
-            )}
-          </div>
-        )}
       </section>
 
       <section className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
