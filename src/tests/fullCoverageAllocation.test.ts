@@ -104,41 +104,37 @@ const makeFullCase = (damage: number, services: number, faunaFinancing = 0, owne
   assert.equal(fin.ownerContributionRequired, 0);
 }
 
-// Un abono es fondo global: el daño bruto no cambia, pero el abono se usa a favor
-// del arrendatario antes de activar financiamiento adicional de Full.
+// Un abono proporcional se imputa primero a servicios y no reduce el beneficio Full.
 {
-  const c = makeFullCase(800000, 100000, 350000);
+  const c = makeFullCase(800000, 100000, 400000);
   c.charges.push({
-    id: 'CREDIT', category: 'DAÑOS', description: 'Abono previo', amount: -50000,
+    id: 'CREDIT', category: 'DAÑOS', description: 'Proporcional de servicios', amount: -50000,
     date: '09/08/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
   });
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.damageCharges, 800000);
   assert.equal(fin.serviceCharges, 100000);
-  assert.equal(fin.tenantCredits, 50000);
   assert.equal(fin.totalCharges, 850000);
-  assert.equal(fin.creditsForDamage, 50000);
-  assert.equal(fin.fullCoverageApplied, 350000);
-  assert.equal(fin.ownerServiceObligation, 100000);
+  assert.equal(fin.creditsForServices, 50000);
+  assert.equal(fin.creditsForDamage, 0);
+  assert.equal(fin.fullCoverageApplied, 400000);
+  assert.equal(fin.ownerServiceObligation, 50000);
 }
 
-// El concepto del abono es referencial: aunque diga gastos comunes, financieramente
-// entra al fondo general y sigue la prioridad de cobertura del caso.
+// Si el abono cubre completamente los servicios, Full sigue protegiendo el daño restante.
 {
-  const c = makeFullCase(800000, 100000, 300000);
+  const c = makeFullCase(800000, 100000, 400000);
   c.charges.push({
-    id: 'CREDIT-SERVICE', category: 'GASTOS_COMUNES', description: 'Abono proporcional de servicios', amount: -100000,
+    id: 'CREDIT-SERVICE', category: 'GASTOS_COMUNES', description: 'Proporcional de gastos comunes', amount: -100000,
     date: '09/08/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
   });
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.damageCharges, 800000);
   assert.equal(fin.serviceCharges, 100000);
-  assert.equal(fin.tenantCredits, 100000);
+  assert.equal(fin.creditsForServices, 100000);
   assert.equal(fin.totalCharges, 800000);
-  assert.equal(fin.creditsForDamage, 100000);
-  assert.equal(fin.creditsForServices, 0);
-  assert.equal(fin.fullCoverageApplied, 300000);
-  assert.equal(fin.ownerContributionRequired, 100000);
+  assert.equal(fin.fullCoverageApplied, 400000);
+  assert.equal(fin.ownerContributionRequired, 0);
 }
 
-console.log('✓ Prioridad Plan Full, obligaciones y abonos globales: 9 escenarios OK');
+console.log('✓ Prioridad Plan Full, obligaciones y abonos: 9 escenarios OK');
