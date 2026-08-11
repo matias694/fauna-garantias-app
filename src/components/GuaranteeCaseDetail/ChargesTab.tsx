@@ -55,6 +55,8 @@ const trackingStatusLabel = (status?: RepairStatus) => {
   return 'Pendiente';
 };
 
+const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
 export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   const {
     addCharge,
@@ -80,6 +82,8 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   const [formError, setFormError] = useState('');
 
   const [repairProvider, setRepairProvider] = useState('');
+  const [repairProviderPhone, setRepairProviderPhone] = useState('');
+  const [repairProviderEmail, setRepairProviderEmail] = useState('');
   const [repairResponsible, setRepairResponsible] = useState(
     guaranteeCase.responsible || settings.responsiblesList[0] || ''
   );
@@ -94,6 +98,8 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     setDate(todayStr);
     setNotes('');
     setRepairProvider('');
+    setRepairProviderPhone('');
+    setRepairProviderEmail('');
     setRepairResponsible(guaranteeCase.responsible || settings.responsiblesList[0] || '');
     setRepairCommitmentDate('');
     setFormError('');
@@ -115,6 +121,8 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     setDate(parseFormattedDateToInput(ch.date) || todayStr);
     setNotes(ch.notes || '');
     setRepairProvider(ch.repairTracking?.provider || '');
+    setRepairProviderPhone(ch.repairTracking?.providerPhone || '');
+    setRepairProviderEmail(ch.repairTracking?.providerEmail || '');
     setRepairResponsible(ch.repairTracking?.responsible || guaranteeCase.responsible || settings.responsiblesList[0] || '');
     setRepairCommitmentDate(parseFormattedDateToInput(ch.repairTracking?.commitmentDate || ''));
     setFormError('');
@@ -137,6 +145,8 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
 
   const getDefaultTracking = (ch: Charge) => ({
     provider: ch.repairTracking?.provider || '',
+    providerPhone: ch.repairTracking?.providerPhone || '',
+    providerEmail: ch.repairTracking?.providerEmail || '',
     responsible: ch.repairTracking?.responsible || guaranteeCase.responsible || settings.responsiblesList[0] || '',
     status: ch.repairTracking?.status || ('PENDIENTE' as RepairStatus),
     commitmentDate: ch.repairTracking?.commitmentDate || '',
@@ -183,6 +193,17 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     const type = inferChargeType(normalizedCategory);
     const isRepairCharge = movementKind === 'CARGO' && type === 'DAÑO_REPARACION';
 
+    if (isRepairCharge) {
+      if (!repairProvider.trim() || !repairProviderPhone.trim() || !repairProviderEmail.trim()) {
+        setFormError('Para crear o editar una reparación debes indicar maestro/proveedor, teléfono y correo.');
+        return;
+      }
+      if (!validEmail(repairProviderEmail)) {
+        setFormError('Ingresa un correo válido para el maestro o proveedor.');
+        return;
+      }
+    }
+
     const nextChargeData: Omit<Charge, 'id'> = {
       category: normalizedCategory,
       description: description.trim(),
@@ -192,12 +213,15 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
       notes: notes.trim(),
       repairId: editingCharge?.repairId,
       repairTracking: isRepairCharge
-        ? editingCharge?.repairTracking || {
+        ? {
+            ...editingCharge?.repairTracking,
             provider: repairProvider.trim(),
+            providerPhone: repairProviderPhone.trim(),
+            providerEmail: repairProviderEmail.trim().toLowerCase(),
             responsible: repairResponsible,
-            status: 'PENDIENTE',
+            status: editingCharge?.repairTracking?.status || 'PENDIENTE',
             commitmentDate: repairCommitmentDate,
-            notes: ''
+            notes: editingCharge?.repairTracking?.notes || ''
           }
         : undefined,
       documents: editingCharge?.documents || [],
@@ -217,6 +241,11 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
         changes.push(`fecha: ${formatDate(editingCharge.date)} → ${formatDate(date)}`);
       }
       if ((editingCharge.notes || '') !== notes.trim()) changes.push('observaciones actualizadas');
+      if (isRepairCharge && (
+        editingCharge.repairTracking?.provider !== repairProvider.trim()
+        || editingCharge.repairTracking?.providerPhone !== repairProviderPhone.trim()
+        || editingCharge.repairTracking?.providerEmail !== repairProviderEmail.trim().toLowerCase()
+      )) changes.push('contacto del maestro/proveedor actualizado');
 
       updateCharge(guaranteeCase.id, editingCharge.id, nextChargeData);
       logAudit(
@@ -244,6 +273,8 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
         const tracking = nextChargeData.repairTracking;
         const details = [
           tracking?.provider ? `proveedor ${tracking.provider}` : null,
+          tracking?.providerPhone ? `tel. ${tracking.providerPhone}` : null,
+          tracking?.providerEmail ? `correo ${tracking.providerEmail}` : null,
           tracking?.responsible ? `responsable ${tracking.responsible}` : null,
           tracking?.commitmentDate ? `compromiso inicial ${formatDate(tracking.commitmentDate)}` : null
         ].filter(Boolean).join(' · ');
@@ -272,31 +303,21 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
             <DollarSign className="w-5 h-5 text-emerald-600" />
             <h3 className="font-bold text-slate-800 text-base">Cargos y abonos</h3>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">
-            Registra los cargos definitivos y los abonos recibidos antes de confirmar la liquidación.
-          </p>
+          <p className="text-[11px] text-slate-500 mt-1">Registra los cargos definitivos y los abonos recibidos antes de confirmar la liquidación.</p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleOpenAdd('ABONO')}
             disabled={isConfirmed}
-            className={`px-3.5 py-2 font-bold text-xs rounded-xl border flex items-center gap-1.5 ${
-              isConfirmed
-                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                : 'bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50 cursor-pointer'
-            }`}
+            className={`px-3.5 py-2 font-bold text-xs rounded-xl border flex items-center gap-1.5 ${isConfirmed ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed' : 'bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50 cursor-pointer'}`}
           >
             <Minus className="w-4 h-4" /> Abono
           </button>
           <button
             onClick={() => handleOpenAdd('CARGO')}
             disabled={isConfirmed}
-            className={`px-3.5 py-2 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 ${
-              isConfirmed
-                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-            }`}
+            className={`px-3.5 py-2 font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 ${isConfirmed ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'}`}
           >
             {isConfirmed ? <Lock className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             <span>{isConfirmed ? 'Bloqueado' : 'Cargo'}</span>
@@ -343,24 +364,27 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                   return (
                     <tr key={ch.id} className="hover:bg-slate-50 transition-colors align-top">
                       <td className="p-3 whitespace-nowrap">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          isCredit
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-rose-50 text-rose-800 border-rose-200'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isCredit ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-rose-50 text-rose-800 border-rose-200'}`}>
                           {isCredit ? 'ABONO' : 'CARGO'}
                         </span>
                       </td>
                       <td className="p-3 whitespace-nowrap text-slate-700 font-semibold">{conceptLabel(ch.category)}</td>
-                      <td className="p-3 min-w-[260px]">
+                      <td className="p-3 min-w-[280px]">
                         <p className="font-bold text-slate-800 text-xs">{ch.description}</p>
-                        {isRepairCharge && (tracking.provider || tracking.responsible || tracking.commitmentDate) && (
+                        {isRepairCharge && (
                           <div className="mt-1 text-[10px] text-slate-500 space-y-0.5">
                             {(tracking.provider || tracking.responsible) && (
                               <div>
-                                {tracking.provider && <span>Proveedor: {tracking.provider}</span>}
+                                {tracking.provider && <span>Maestro/proveedor: {tracking.provider}</span>}
                                 {tracking.provider && tracking.responsible && <span> · </span>}
                                 {tracking.responsible && <span>Responsable: {tracking.responsible}</span>}
+                              </div>
+                            )}
+                            {(tracking.providerPhone || tracking.providerEmail) && (
+                              <div>
+                                {tracking.providerPhone && <span>{tracking.providerPhone}</span>}
+                                {tracking.providerPhone && tracking.providerEmail && <span> · </span>}
+                                {tracking.providerEmail && <span>{tracking.providerEmail}</span>}
                               </div>
                             )}
                             {tracking.commitmentDate && <div>Compromiso inicial: {formatDate(tracking.commitmentDate)}</div>}
@@ -468,9 +492,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                   onChange={(e) => { setCategory(e.target.value as ChargeCategory); setFormError(''); }}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
                 >
-                  {visibleConcepts.map(cat => (
-                    <option key={cat} value={cat}>{conceptLabel(cat)}</option>
-                  ))}
+                  {visibleConcepts.map(cat => <option key={cat} value={cat}>{conceptLabel(cat)}</option>)}
                 </select>
               </div>
 
@@ -506,19 +528,27 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                 </div>
               </div>
 
-              {!editingCharge && movementKind === 'CARGO' && inferChargeType(category) === 'DAÑO_REPARACION' && (
+              {movementKind === 'CARGO' && inferChargeType(category) === 'DAÑO_REPARACION' && (
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
                   <div className="flex items-start gap-2">
                     <Wrench className="w-4 h-4 text-emerald-600 mt-0.5" />
                     <div>
-                      <strong className="text-xs text-slate-800 block">Datos iniciales de la reparación</strong>
-                      <span className="text-[10px] text-slate-500">Después el avance se controla con el estado y las novedades se documentan en Seguimiento.</span>
+                      <strong className="text-xs text-slate-800 block">Datos del maestro / proveedor</strong>
+                      <span className="text-[10px] text-slate-500">Nombre, teléfono y correo son obligatorios para que la reparación quede trazable.</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Maestro / proveedor *</label>
+                      <input required value={repairProvider} onChange={(e) => { setRepairProvider(e.target.value); setFormError(''); }} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" placeholder="Nombre del maestro o empresa" />
+                    </div>
                     <div>
-                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Proveedor / maestro</label>
-                      <input value={repairProvider} onChange={(e) => setRepairProvider(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" placeholder="Ej. Maestro / empresa" />
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Teléfono *</label>
+                      <input type="tel" required value={repairProviderPhone} onChange={(e) => { setRepairProviderPhone(e.target.value); setFormError(''); }} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" placeholder="+56 9 ..." />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">Correo *</label>
+                      <input type="email" required value={repairProviderEmail} onChange={(e) => { setRepairProviderEmail(e.target.value); setFormError(''); }} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" placeholder="correo@ejemplo.cl" />
                     </div>
                     <div>
                       <label className="block text-[10px] font-semibold text-slate-600 mb-1">Responsable interno</label>
@@ -527,18 +557,11 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                         {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </div>
-                    <div className="md:col-span-2">
+                    <div>
                       <label className="block text-[10px] font-semibold text-slate-600 mb-1">Fecha compromiso inicial</label>
                       <input type="date" value={repairCommitmentDate} onChange={(e) => setRepairCommitmentDate(e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs" />
                     </div>
                   </div>
-                </div>
-              )}
-
-              {editingCharge && editingCharge.amount > 0 && editingCharge.type === 'DAÑO_REPARACION' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900">
-                  <strong className="block">Aquí solo editas el cargo.</strong>
-                  Para el avance usa el selector de estado de la fila. Reagendamientos, cambios de proveedor o coordinaciones deben quedar en Seguimiento.
                 </div>
               )}
 

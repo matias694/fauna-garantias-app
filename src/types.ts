@@ -116,6 +116,8 @@ export type ChargeType = 'DAÑO_REPARACION' | 'SERVICIO_CONSUMO' | 'GASTO_COMUN'
 
 export interface RepairTracking {
   provider: string;
+  providerPhone?: string;
+  providerEmail?: string;
   responsible: string;
   responsibleUserId?: string;
   status: RepairStatus;
