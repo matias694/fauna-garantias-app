@@ -47,7 +47,7 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
           </div>
         </div>
 
-        <div ref={documentRef} className="p-8 space-y-6 overflow-y-auto font-sans text-slate-800 text-xs bg-white print:p-0 print:overflow-visible">
+        <div ref={documentRef} className="p-8 space-y-6 overflow-y-auto font-sans text-slate-800 text-xs bg-white">
           <div className="flex items-start justify-between border-b border-slate-200 pb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#1E382B] text-white flex items-center justify-center p-2">
