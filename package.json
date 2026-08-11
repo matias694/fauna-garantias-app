@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:rules": "tsx src/tests/businessRules.test.ts && tsx src/tests/fullCoverageAllocation.test.ts && tsx src/tests/receivablesRules.test.ts && tsx src/tests/settlementState.test.ts && tsx src/tests/liquidationPdf.test.ts && tsx src/tests/globalCredits.test.ts && node scripts/test-completed-case-sync.mjs"
+    "test:rules": "tsx src/tests/businessRules.test.ts && tsx src/tests/fullCoverageAllocation.test.ts && tsx src/tests/receivablesRules.test.ts && tsx src/tests/settlementState.test.ts && tsx src/tests/liquidationPdf.test.ts && tsx src/tests/globalCredits.test.ts && tsx src/tests/ownerFundingFlow.test.ts && node scripts/test-completed-case-sync.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
