@@ -1,4 +1,4 @@
-import { GuaranteeCase, SystemSettings } from '../types';
+import { Charge, GuaranteeCase, SystemSettings } from '../types';
 
 export interface FinancialCalculationResult {
   guaranteeAmount: number;
@@ -14,13 +14,9 @@ export interface FinancialCalculationResult {
   guaranteeUsed: number;
   guaranteeForDamage: number;
   guaranteeForServices: number;
-  /** Parte del abono proporcional usada primero en GC/servicios. */
   creditsForServices: number;
-  /** Excedente del abono aplicado a la diferencia de reparaciones después de Garantía + Full. */
   creditsForDamage: number;
-  /** Excedente del abono que recupera inmediatamente parte de la cobertura Full ya aplicada. */
   creditsForFaunaRecovery: number;
-  /** Abono que queda libre después de cubrir servicios y obligaciones de daño. */
   tenantCreditsUnapplied: number;
   isSurplus: boolean;
   isExact: boolean;
@@ -28,26 +24,21 @@ export interface FinancialCalculationResult {
   refundToTenant: number;
   tenantDeficit: number;
   fullCoverageLimit: number;
-  /** Beneficio contractual aplicado a daños. No se reduce por el abono proporcional de servicios. */
   fullCoverageApplied: number;
   ownerRepairFundingRequired: number;
   ownerServiceObligation: number;
   ownerContributionRequired: number;
-  /** Desembolso neto de Fauna pendiente después de compensar excedentes del abono. */
   faunaFinancingRequired: number;
   tenantReceivableAmount: number;
 }
 
 export interface FundingReadiness {
-  /** Total legacy: reparaciones + servicios a cargo del propietario. */
   ownerRequired: number;
   ownerProvisionedTotal: number;
-  /** Saldo legacy total pendiente del propietario; NO determina por sí solo el bloqueo. */
   ownerPendingProvision: number;
   ownerRepairRequired: number;
   ownerRepairFundedTotal: number;
   ownerRepairPendingProvision: number;
-  /** Servicios/GC pueden quedar como obligación vigente sin bloquear la liquidación. */
   ownerServiceRequired: number;
   ownerServiceFundedTotal: number;
   ownerServiceSettledFromTenant: number;
@@ -71,22 +62,20 @@ export interface OwnerLiquidationReconciliation {
   reconciliationBalance: number;
 }
 
+/** Fuente única para decidir si una fila forma parte del documento/cálculo económico. */
+export function isChargeIncludedInLiquidation(ch: Charge): boolean {
+  if (ch.amount < 0) return true;
+  if (ch.amount <= 0) return false;
+  if (ch.type === 'DAÑO_REPARACION' && ch.repairTracking?.status === 'CANCELADA') return false;
+  return true;
+}
+
 /**
  * Regla económica de cargos y abonos:
  * - CARGO: monto positivo que aumenta lo que debe cubrir la salida.
- * - ABONO: monto negativo que representa el proporcional de GC/servicios ya recibido
- *   del arrendatario antes de su salida.
- * - Una reparación CANCELADA deja de formar parte del resultado económico. Si existe
- *   una indemnización que deba mantenerse, debe registrarse como un cargo vigente separado.
- *
- * Prioridad:
- * 1) garantía a daños/reparaciones;
- * 2) Plan Full, si corresponde, al daño restante (el abono de servicios no reduce el beneficio Full);
- * 3) garantía sobrante a GC/servicios;
- * 4) abono proporcional a GC/servicios;
- * 5) si sobra abono, ese excedente compensa primero una diferencia de reparaciones del propietario
- *    y luego recupera inmediatamente financiamiento Full;
- * 6) solo después de compensar todo se determina devolución o cuenta por cobrar al arrendatario.
+ * - ABONO: monto negativo que representa el proporcional de GC/servicios ya recibido.
+ * - Una reparación CANCELADA queda en la trazabilidad operativa, pero no forma parte
+ *   del resultado económico ni de los documentos de liquidación.
  */
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
@@ -99,6 +88,7 @@ export function calculateGuaranteeFinances(
   let tenantCredits = 0;
 
   (c.charges || []).forEach(ch => {
+    if (!isChargeIncludedInLiquidation(ch)) return;
     const amount = Number(ch.amount) || 0;
 
     if (amount < 0) {
@@ -106,14 +96,8 @@ export function calculateGuaranteeFinances(
       return;
     }
 
-    if (amount <= 0) return;
-    if (ch.type === 'DAÑO_REPARACION' && ch.repairTracking?.status === 'CANCELADA') return;
-
-    if (ch.type === 'DAÑO_REPARACION') {
-      damageCharges += amount;
-    } else {
-      serviceCharges += amount;
-    }
+    if (ch.type === 'DAÑO_REPARACION') damageCharges += amount;
+    else serviceCharges += amount;
   });
 
   const grossCharges = damageCharges + serviceCharges;
@@ -127,29 +111,23 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // 1) La garantía se aplica primero a daños/reparaciones.
   const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
   const guaranteeRemainingAfterDamage = Math.max(0, guaranteeAmount - guaranteeForDamage);
   const damageAfterGuarantee = Math.max(0, damageCharges - guaranteeForDamage);
 
-  // 2) Full protege al propietario sobre el daño restante sin consumir antes el abono de servicios.
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
   const fullCoverageApplied = c.plan === 'FULL'
     ? Math.min(fullCoverageLimit, damageAfterGuarantee)
     : 0;
   const damageAfterGuaranteeAndFull = Math.max(0, damageAfterGuarantee - fullCoverageApplied);
 
-  // 3) La garantía que sobra después de daños se usa en GC/servicios.
   const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, serviceCharges);
   const servicesAfterGuarantee = Math.max(0, serviceCharges - guaranteeForServices);
 
-  // 4) El abono proporcional se imputa primero a GC/servicios.
   const creditsForServices = Math.min(tenantCredits, servicesAfterGuarantee);
   let creditsRemaining = Math.max(0, tenantCredits - creditsForServices);
   const ownerServiceObligation = Math.max(0, servicesAfterGuarantee - creditsForServices);
 
-  // 5) Solo el excedente del abono puede pasar a daños. Respeta la prioridad de recuperación:
-  // propietario primero y Fauna después.
   const creditsForDamage = Math.min(creditsRemaining, damageAfterGuaranteeAndFull);
   creditsRemaining -= creditsForDamage;
   const ownerRepairFundingRequired = Math.max(0, damageAfterGuaranteeAndFull - creditsForDamage);
@@ -161,8 +139,6 @@ export function calculateGuaranteeFinances(
 
   const guaranteeUsed = guaranteeForDamage + guaranteeForServices;
   const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
-
-  // Full no extingue la deuda del arrendatario. Garantía y abonos previos sí reducen su saldo.
   const tenantReceivableAmount = tenantDeficit;
 
   return {
@@ -200,17 +176,6 @@ const sumPositiveMovements = (c: GuaranteeCase, type: GuaranteeCase['movements']
     .filter(m => m.type === type)
     .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
-/**
- * Determina qué fondos son requisito para confirmar y qué montos pueden permanecer
- * como obligación posterior.
- *
- * Los pagos del propietario se mantienen en dos bolsas estructuradas:
- * - REPARACIONES solo financia reparaciones;
- * - SERVICIOS solo extingue la obligación de GC/servicios.
- *
- * Los movimientos antiguos sin purpose se conservan por compatibilidad y se asignan
- * primero a reparaciones y luego a servicios, que era la regla histórica del prototipo.
- */
 export function calculateFundingReadiness(
   c: GuaranteeCase,
   settings: SystemSettings
@@ -283,8 +248,6 @@ export function calculateFundingReadiness(
     fullCoverageRequired,
     fullCoverageExecutedTotal,
     fullCoveragePendingExecution,
-    // Plan Full es contractual y no requiere una segunda acción manual para habilitar la emisión.
-    // El desembolso/ledger se materializa al confirmar la liquidación.
     readyToConfirm: ownerRepairPendingProvision === 0
   };
 }
@@ -321,12 +284,6 @@ export function calculateOwnerLiquidationReconciliation(
   };
 }
 
-/**
- * Distribuye pagos posteriores del arrendatario:
- * 1) devolver la provisión efectivamente realizada por el propietario;
- * 2) recuperar la cobertura Full efectivamente desembolsada por Fauna;
- * 3) el remanente se aplica al resto de la deuda del arrendatario.
- */
 export function calculatePaymentDistribution(
   paymentAmount: number,
   ownerContributionToRecover: number,
