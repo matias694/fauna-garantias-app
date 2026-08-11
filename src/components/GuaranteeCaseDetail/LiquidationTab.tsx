@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
 import { formatCLP, formatDate } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
-import { CheckCircle2, AlertTriangle, FileText, Plus, Banknote, Lock, Clock3 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, FileText, Plus, Banknote, Lock, Clock3, X } from 'lucide-react';
 
 interface LiquidationTabProps {
   guaranteeCase: GuaranteeCase;
@@ -26,12 +26,19 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   const [newReqName, setNewReqName] = useState('');
   const [showAddReq, setShowAddReq] = useState(false);
   const [blockedNotes, setBlockedNotes] = useState(guaranteeCase.blockedReasonNotes || '');
+  const [blockSaved, setBlockSaved] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundDate, setRefundDate] = useState(formatDate(new Date().toISOString().split('T')[0]));
   const [refundVoucher, setRefundVoucher] = useState('');
   const [refundAccount, setRefundAccount] = useState(guaranteeCase.refund?.destinationAccount || '');
   const [refundNotes, setRefundNotes] = useState('');
+
+  useEffect(() => {
+    setBlockedNotes(guaranteeCase.blockedReasonNotes || '');
+    setBlockSaved(false);
+  }, [guaranteeCase.id, guaranteeCase.blockedReasonNotes]);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
@@ -73,24 +80,30 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
   const handleBlockedByChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value as BlockedByReason;
-    changeLiquidationStatus(guaranteeCase.id, guaranteeCase.liquidationStatus, val, blockedNotes);
+    const notes = val === 'SIN_BLOQUEO' ? '' : blockedNotes;
+    if (val === 'SIN_BLOQUEO') setBlockedNotes('');
+    setBlockSaved(false);
+    changeLiquidationStatus(guaranteeCase.id, guaranteeCase.liquidationStatus, val, notes);
   };
 
   const handleSaveBlockedNotes = () => {
-    changeLiquidationStatus(guaranteeCase.id, guaranteeCase.liquidationStatus, guaranteeCase.blockedBy, blockedNotes);
-    alert('Motivo de bloqueo actualizado.');
+    changeLiquidationStatus(
+      guaranteeCase.id,
+      guaranteeCase.liquidationStatus,
+      guaranteeCase.blockedBy,
+      blockedNotes.trim()
+    );
+    setBlockSaved(true);
   };
 
   const handleConfirmLiquidation = () => {
     if (!isReady) return;
+    setShowConfirmModal(true);
+  };
 
-    const confirmed = window.confirm(
-      '¿Confirmar esta liquidación como definitiva?\n\nAl confirmar, los cargos y abonos quedarán fijados. Si existe un saldo por cobrar, se creará la cuenta por cobrar. Si existe una devolución, quedará pendiente de transferir.'
-    );
-    if (!confirmed) return;
-
+  const confirmLiquidation = () => {
     emitLiquidation(guaranteeCase.id);
-    alert('Liquidación confirmada. Las acciones posteriores se gestionarán por separado.');
+    setShowConfirmModal(false);
   };
 
   const handleRegisterRefundSubmit = (e: React.FormEvent) => {
@@ -102,7 +115,6 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
       notes: refundNotes
     });
     setIsRefundModalOpen(false);
-    alert('Transferencia de devolución registrada.');
   };
 
   return (
@@ -138,15 +150,20 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         </div>
 
         {guaranteeCase.blockedBy !== 'SIN_BLOQUEO' && (
-          <div className="border-t border-amber-100 bg-amber-50 p-3 flex gap-2 text-xs">
+          <div className="border-t border-amber-100 bg-amber-50 p-3 flex flex-col sm:flex-row sm:items-center gap-2 text-xs">
             <input
               type="text"
               value={blockedNotes}
-              onChange={(e) => setBlockedNotes(e.target.value)}
+              onChange={(e) => { setBlockedNotes(e.target.value); setBlockSaved(false); }}
               placeholder="Indica qué está impidiendo avanzar..."
               className="flex-1 bg-white border border-amber-300 rounded-lg p-2 text-xs"
             />
             <button onClick={handleSaveBlockedNotes} className="px-3 py-1.5 bg-amber-800 text-white font-bold rounded-lg cursor-pointer">Guardar</button>
+            {blockSaved && (
+              <span className="text-[11px] text-emerald-800 font-bold inline-flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Guardado
+              </span>
+            )}
           </div>
         )}
       </section>
@@ -326,6 +343,45 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             </div>
           )}
         </section>
+      )}
+
+      {showConfirmModal && isReady && !isConfirmed && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-purple-700 rounded-xl"><Lock className="w-4 h-4" /></div>
+                <div>
+                  <h3 className="font-bold text-sm">Confirmar liquidación</h3>
+                  <p className="text-[11px] text-slate-300">{guaranteeCase.id} · resultado definitivo</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowConfirmModal(false)} className="p-1.5 text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Resultado al confirmar</span>
+                <strong className="text-base text-slate-900 block mt-1">{projectedResult}</strong>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Al confirmar, los cargos y abonos quedarán fijados como resultado original. Las devoluciones, cobranzas y obligaciones posteriores se gestionarán sin modificar esta liquidación.
+              </p>
+              <p className="text-slate-500 leading-relaxed">
+                Un saldo pendiente del propietario por gastos comunes o servicios puede mantenerse después de confirmar y no bloquea la liquidación.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowConfirmModal(false)} className="px-4 py-2 border border-slate-300 text-slate-700 font-bold rounded-xl cursor-pointer">Cancelar</button>
+              <button type="button" onClick={confirmLiquidation} className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" /> Confirmar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {isRefundModalOpen && isConfirmed && (
