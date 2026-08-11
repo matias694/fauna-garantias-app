@@ -2,6 +2,11 @@ import { GuaranteeCase, SystemSettings } from '../types';
 
 export interface FinancialCalculationResult {
   guaranteeAmount: number;
+  /** Cargos positivos antes de abonos. */
+  grossCharges: number;
+  /** Abonos ya recibidos del arrendatario, sin importar su concepto informativo. */
+  tenantCredits: number;
+  /** Neto cargos - abonos. Puede ser negativo si hay más fondos abonados que cargos. */
   totalCharges: number;
   damageCharges: number;
   serviceCharges: number;
@@ -9,6 +14,8 @@ export interface FinancialCalculationResult {
   guaranteeUsed: number;
   guaranteeForDamage: number;
   guaranteeForServices: number;
+  creditsForDamage: number;
+  creditsForServices: number;
   isSurplus: boolean;
   isExact: boolean;
   isInsufficient: boolean;
@@ -57,35 +64,51 @@ export interface OwnerLiquidationReconciliation {
 }
 
 /**
- * Los cargos se guardan positivos y los abonos como montos negativos.
- * Cada abono reduce solamente su grupo económico (daños o servicios), evitando
- * que un abono de servicios libere artificialmente cobertura para reparaciones o viceversa.
+ * Regla económica de cargos y abonos:
+ * - CARGO: monto positivo que aumenta lo que debe cubrir la salida.
+ * - ABONO: monto negativo que representa dinero ya recibido del arrendatario.
+ *   Su categoría/concepto es solo informativa; financieramente entra a un fondo común.
+ *
+ * Para conservar la prioridad contractual, los fondos del arrendatario se aplican así:
+ * 1) garantía a daños/reparaciones;
+ * 2) abonos del arrendatario al daño que aún quede descubierto;
+ * 3) Plan Full, solo si todavía queda daño descubierto y hasta el límite permitido;
+ * 4) garantía sobrante y abonos sobrantes a gastos comunes/servicios;
+ * 5) cualquier diferencia restante corresponde al propietario según la naturaleza del gasto.
+ *
+ * Plan Full protege al propietario, pero no extingue la deuda del arrendatario: la cuenta
+ * por cobrar se determina solo con cargos - garantía - abonos ya recibidos.
  */
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
   _settings: SystemSettings
 ): FinancialCalculationResult {
-  const guaranteeAmount = c.guaranteeAmount || 0;
+  const guaranteeAmount = Math.max(0, c.guaranteeAmount || 0);
 
-  let rawDamageCharges = 0;
-  let rawServiceCharges = 0;
+  let damageCharges = 0;
+  let serviceCharges = 0;
+  let tenantCredits = 0;
 
   (c.charges || []).forEach(ch => {
-    const amt = Number(ch.amount) || 0;
+    const amount = Number(ch.amount) || 0;
+
+    if (amount < 0) {
+      tenantCredits += Math.abs(amount);
+      return;
+    }
+
+    if (amount <= 0) return;
+
     if (ch.type === 'DAÑO_REPARACION') {
-      rawDamageCharges += amt;
+      damageCharges += amount;
     } else {
-      rawServiceCharges += amt;
+      serviceCharges += amount;
     }
   });
 
-  // Un abono nunca transforma una categoría en un cargo negativo.
-  const damageCharges = Math.max(0, rawDamageCharges);
-  const serviceCharges = Math.max(0, rawServiceCharges);
-  const totalCharges = damageCharges + serviceCharges;
-
-  const rawBalance = guaranteeAmount - totalCharges;
-  const guaranteeUsed = Math.max(0, Math.min(guaranteeAmount, totalCharges));
+  const grossCharges = damageCharges + serviceCharges;
+  const totalCharges = grossCharges - tenantCredits;
+  const rawBalance = guaranteeAmount + tenantCredits - grossCharges;
 
   const isSurplus = rawBalance > 0;
   const isExact = rawBalance === 0;
@@ -94,43 +117,44 @@ export function calculateGuaranteeFinances(
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
-  // Prioridad contractual/operativa:
-  // 1) la garantía se aplica primero a daños/reparaciones;
-  // 2) si no alcanza, Plan Full cubre SOLO el daño restante, hasta un máximo
-  //    equivalente al 100% de la garantía;
-  // 3) la garantía que eventualmente sobre después de los daños puede cubrir
-  //    gastos comunes, servicios básicos y otros cargos;
-  // 4) la diferencia de reparaciones requiere provisión previa del propietario,
-  //    mientras la diferencia de servicios puede quedar como obligación vigente.
+  // 1) Garantía primero a daños/reparaciones.
   const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
   const guaranteeRemainingAfterDamage = Math.max(0, guaranteeAmount - guaranteeForDamage);
-  const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, serviceCharges);
 
+  // 2) Los abonos son fondos generales del arrendatario y cubren el daño aún descubierto.
+  const damageAfterGuarantee = Math.max(0, damageCharges - guaranteeForDamage);
+  const creditsForDamage = Math.min(tenantCredits, damageAfterGuarantee);
+  const creditsRemainingAfterDamage = Math.max(0, tenantCredits - creditsForDamage);
+  const damageAfterTenantFunds = Math.max(0, damageAfterGuarantee - creditsForDamage);
+
+  // 3) Full se activa solo sobre daño que siga efectivamente descubierto.
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
-  let fullCoverageApplied = 0;
-
-  if (c.plan === 'FULL') {
-    const uncoveredDamage = Math.max(0, damageCharges - guaranteeForDamage);
-    fullCoverageApplied = Math.min(fullCoverageLimit, uncoveredDamage);
-  }
+  const fullCoverageApplied = c.plan === 'FULL'
+    ? Math.min(fullCoverageLimit, damageAfterTenantFunds)
+    : 0;
 
   const ownerRepairFundingRequired = Math.max(
     0,
-    damageCharges - guaranteeForDamage - fullCoverageApplied
-  );
-  const ownerServiceObligation = Math.max(
-    0,
-    serviceCharges - guaranteeForServices
+    damageAfterTenantFunds - fullCoverageApplied
   );
 
+  // 4) Fondos restantes del arrendatario cubren servicios/GC.
+  const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, serviceCharges);
+  const servicesAfterGuarantee = Math.max(0, serviceCharges - guaranteeForServices);
+  const creditsForServices = Math.min(creditsRemainingAfterDamage, servicesAfterGuarantee);
+  const ownerServiceObligation = Math.max(0, servicesAfterGuarantee - creditsForServices);
+
+  const guaranteeUsed = guaranteeForDamage + guaranteeForServices;
   const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
-  const faunaFinancingRequired = c.plan === 'FULL' ? fullCoverageApplied : 0;
+  const faunaFinancingRequired = fullCoverageApplied;
 
-  // La cobertura Full protege al propietario, pero no extingue la deuda del arrendatario.
+  // La cobertura Full no reduce la deuda del arrendatario; sí lo hacen sus abonos previos.
   const tenantReceivableAmount = tenantDeficit;
 
   return {
     guaranteeAmount,
+    grossCharges,
+    tenantCredits,
     totalCharges,
     damageCharges,
     serviceCharges,
@@ -138,6 +162,8 @@ export function calculateGuaranteeFinances(
     guaranteeUsed,
     guaranteeForDamage,
     guaranteeForServices,
+    creditsForDamage,
+    creditsForServices,
     isSurplus,
     isExact,
     isInsufficient,

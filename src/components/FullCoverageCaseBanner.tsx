@@ -9,6 +9,8 @@ import { Banknote, CheckCircle2, Clock3, ShieldCheck, WalletCards } from 'lucide
  * - Una diferencia en reparaciones debe resolverse antes de confirmar.
  * - GC/servicios pendientes del propietario no bloquean la liquidación, pero sí
  *   permanecen como obligación vigente hasta quedar cubiertos.
+ * - Los abonos del arrendatario son fondos generales y se aplican según la prioridad
+ *   financiera del caso, sin quedar amarrados al concepto usado como referencia.
  */
 export const FullCoverageCaseBanner: React.FC = () => {
   const {
@@ -84,13 +86,16 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <div>
               <h3 className="font-extrabold text-sm">Cómo se cubre esta salida</h3>
               <p className="text-[11px] text-emerald-200">
-                Primero se usa la garantía en daños y reparaciones; {isFull ? 'si no alcanza, Plan Full cubre solo el daño restante. ' : ''}Después se consideran gastos comunes y servicios.
+                Garantía y abonos del arrendatario son fondos disponibles; {isFull ? 'Plan Full cubre solo el daño que siga descubierto. ' : ''}Después se determina cualquier saldo del propietario.
               </p>
             </div>
           </div>
           <div className="text-left sm:text-right">
-            <span className="text-[10px] uppercase font-bold text-emerald-300 block">Presupuesto total</span>
+            <span className="text-[10px] uppercase font-bold text-emerald-300 block">Neto cargos y abonos</span>
             <strong className="text-xl font-black font-mono">{formatCLP(fin.totalCharges)}</strong>
+            {fin.tenantCredits > 0 && (
+              <span className="text-[10px] text-emerald-200 block">Cargos {formatCLP(fin.grossCharges)} · Abonos {formatCLP(fin.tenantCredits)}</span>
+            )}
           </div>
         </div>
 
@@ -105,6 +110,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
                 {fin.guaranteeForDamage > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">Garantía <strong>{formatCLP(fin.guaranteeForDamage)}</strong></span>
+                )}
+                {fin.creditsForDamage > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abonos arrendatario <strong>{formatCLP(fin.creditsForDamage)}</strong></span>
                 )}
                 {isFull && fin.fullCoverageApplied > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/40 border border-emerald-500/30">Plan Full <strong>{formatCLP(fin.fullCoverageApplied)}</strong></span>
@@ -140,6 +148,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
                 ) : (
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-200">Sin garantía disponible</span>
                 )}
+                {fin.creditsForServices > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abonos arrendatario <strong>{formatCLP(fin.creditsForServices)}</strong></span>
+                )}
                 {ownerProvisionForServices > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">Pagado por propietario <strong>{formatCLP(ownerProvisionForServices)}</strong></span>
                 )}
@@ -164,7 +175,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
         {isFull && fin.fullCoverageApplied > 0 && (
           <p className="text-[11px] text-emerald-100">
-            Plan Full está usando <strong>{formatCLP(fin.fullCoverageApplied)}</strong> de un máximo disponible de {formatCLP(fin.fullCoverageLimit)}. La cobertura se ajusta automáticamente al daño registrado.
+            Plan Full está usando <strong>{formatCLP(fin.fullCoverageApplied)}</strong> de un máximo disponible de {formatCLP(fin.fullCoverageLimit)}. La cobertura se ajusta al daño que siga descubierto después de los fondos disponibles del arrendatario.
           </p>
         )}
 

@@ -85,24 +85,10 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
   );
   const [repairCommitmentDate, setRepairCommitmentDate] = useState('');
 
-  const getAvailableForCredit = (targetCategory: ChargeCategory, excludeId?: string) => {
-    const normalized = normalizeCategory(targetCategory);
-    const balance = guaranteeCase.charges
-      .filter(ch => ch.id !== excludeId && normalizeCategory(ch.category) === normalized)
-      .reduce((sum, ch) => sum + ch.amount, 0);
-    return Math.max(0, balance);
-  };
-
-  const creditableConcepts = visibleConcepts.filter(cat => getAvailableForCredit(cat) > 0);
-  const selectedCreditBalance = movementKind === 'ABONO'
-    ? getAvailableForCredit(category, editingCharge?.id)
-    : 0;
-
   const resetForm = (kind: MovementKind) => {
-    const firstCreditable = visibleConcepts.find(cat => getAvailableForCredit(cat) > 0);
     setEditingCharge(null);
     setMovementKind(kind);
-    setCategory(kind === 'ABONO' ? (firstCreditable || 'REPARACIONES') : 'REPARACIONES');
+    setCategory(kind === 'ABONO' ? 'OTRO' : 'REPARACIONES');
     setDescription('');
     setAmount(100000);
     setDate(todayStr);
@@ -179,10 +165,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     if (editingCharge) return;
     setMovementKind(kind);
     setFormError('');
-    if (kind === 'ABONO') {
-      const firstCreditable = visibleConcepts.find(cat => getAvailableForCredit(cat) > 0);
-      if (firstCreditable) setCategory(firstCreditable);
-    }
+    if (kind === 'ABONO' && category === 'REPARACIONES') setCategory('OTRO');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -196,18 +179,6 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     }
 
     const normalizedCategory = normalizeCategory(category);
-    if (movementKind === 'ABONO') {
-      const availableForCredit = getAvailableForCredit(normalizedCategory, editingCharge?.id);
-      if (availableForCredit <= 0) {
-        setFormError(`No existe saldo pendiente en ${conceptLabel(normalizedCategory)} al cual aplicar este abono.`);
-        return;
-      }
-      if (amount > availableForCredit) {
-        setFormError(`El abono no puede superar el saldo disponible de ${formatCLP(availableForCredit)}.`);
-        return;
-      }
-    }
-
     const signedAmount = movementKind === 'ABONO' ? -Math.abs(amount) : Math.abs(amount);
     const type = inferChargeType(normalizedCategory);
     const isRepairCharge = movementKind === 'CARGO' && type === 'DAÑO_REPARACION';
@@ -261,6 +232,14 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
       const previewCharge: Charge = { id: 'PREVIEW', ...nextChargeData };
       syncPreparationStatus([...guaranteeCase.charges, previewCharge]);
 
+      if (movementKind === 'ABONO') {
+        logAudit(
+          guaranteeCase.id,
+          'Abono incorporado',
+          `“${description.trim()}” se registró por ${formatCLP(amount)} como fondo a favor del arrendatario${normalizedCategory !== 'OTRO' ? ` · referencia ${conceptLabel(normalizedCategory)}` : ''}.`
+        );
+      }
+
       if (isRepairCharge) {
         const tracking = nextChargeData.repairTracking;
         const details = [
@@ -294,7 +273,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
             <h3 className="font-bold text-slate-800 text-base">Cargos y abonos</h3>
           </div>
           <p className="text-[11px] text-slate-500 mt-1">
-            Los abonos reducen un cargo existente del mismo concepto. En reparaciones, el avance se controla con el estado y las novedades se dejan en Seguimiento.
+            Los cargos aumentan la liquidación y los abonos son fondos ya recibidos del arrendatario que se suman a su favor. El concepto del abono es solo una referencia informativa.
           </p>
         </div>
 
@@ -443,7 +422,19 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
               </tbody>
               <tfoot className="bg-slate-50 border-t border-slate-200">
                 <tr>
-                  <td colSpan={5} className="p-3 text-right text-xs font-bold text-slate-600">Neto aplicado a la liquidación</td>
+                  <td colSpan={5} className="p-3 text-right text-xs font-bold text-slate-600">Cargos</td>
+                  <td className="p-3 text-right font-mono font-bold text-rose-700 whitespace-nowrap">-{formatCLP(fin.grossCharges)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+                {fin.tenantCredits > 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-3 text-right text-xs font-bold text-slate-600">Abonos arrendatario</td>
+                    <td className="p-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">+{formatCLP(fin.tenantCredits)}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                )}
+                <tr className="border-t border-slate-200">
+                  <td colSpan={5} className="p-3 text-right text-xs font-bold text-slate-700">Neto cargos y abonos</td>
                   <td className="p-3 text-right font-mono font-black text-slate-900 whitespace-nowrap">{formatCLP(fin.totalCharges)}</td>
                   <td colSpan={2}></td>
                 </tr>
@@ -470,31 +461,27 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                 {editingCharge && <span className="text-[10px] text-slate-400 block mt-1">Para evitar inconsistencias, el tipo de un movimiento existente no se cambia al editar.</span>}
               </div>
 
-              {movementKind === 'ABONO' && !editingCharge && creditableConcepts.length === 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              {movementKind === 'ABONO' && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-900 flex items-start gap-2">
+                  <DollarSign className="w-4 h-4 mt-0.5 shrink-0" />
                   <div>
-                    <strong className="block">No hay cargos con saldo disponible para abonar.</strong>
-                    <span className="text-[11px]">Primero debe existir un cargo pendiente del mismo concepto. Un abono de Agua, por ejemplo, solo puede reducir un cargo de Agua.</span>
+                    <strong className="block">El abono se suma como fondo a favor del arrendatario.</strong>
+                    <span className="text-[11px]">No necesita existir un cargo del mismo concepto. Usa el concepto solo para dejar una referencia, por ejemplo “Gastos comunes” o “Agua”.</span>
                   </div>
                 </div>
               )}
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Concepto *</label>
+                <label className="block font-semibold text-slate-700 mb-1">Concepto {movementKind === 'ABONO' ? '(referencia)' : '*'}</label>
                 <select
                   value={category}
                   onChange={(e) => { setCategory(e.target.value as ChargeCategory); setFormError(''); }}
-                  disabled={movementKind === 'ABONO' && !editingCharge && creditableConcepts.length === 0}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
                 >
-                  {(movementKind === 'ABONO' && !editingCharge ? creditableConcepts : visibleConcepts).map(cat => (
+                  {visibleConcepts.map(cat => (
                     <option key={cat} value={cat}>{conceptLabel(cat)}</option>
                   ))}
                 </select>
-                {movementKind === 'ABONO' && selectedCreditBalance > 0 && (
-                  <span className="text-[10px] text-emerald-700 font-bold block mt-1">Saldo disponible para abonar: {formatCLP(selectedCreditBalance)}</span>
-                )}
               </div>
 
               <div>
@@ -502,7 +489,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                 <input
                   type="text"
                   required
-                  placeholder={movementKind === 'ABONO' ? 'Ej. Abono proporcional de cuenta de agua' : 'Ej. Reparación pintura dormitorio, cuenta de agua pendiente...'}
+                  placeholder={movementKind === 'ABONO' ? 'Ej. Proporcional gastos comunes y servicios último voucher' : 'Ej. Reparación pintura dormitorio, cuenta de agua pendiente...'}
                   value={description}
                   onChange={(e) => { setDescription(e.target.value); setFormError(''); }}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
@@ -516,7 +503,6 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                     type="number"
                     step="1"
                     min="1"
-                    max={movementKind === 'ABONO' && selectedCreditBalance > 0 ? selectedCreditBalance : undefined}
                     required
                     value={amount}
                     onChange={(e) => { setAmount(Number(e.target.value)); setFormError(''); }}
@@ -559,7 +545,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
                 </div>
               )}
 
-              {editingCharge && editingCharge.type === 'DAÑO_REPARACION' && (
+              {editingCharge && editingCharge.amount > 0 && editingCharge.type === 'DAÑO_REPARACION' && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900">
                   <strong className="block">Aquí solo editas el cargo.</strong>
                   Para el avance usa el selector de estado de la fila. Reagendamientos, cambios de proveedor o coordinaciones deben quedar en Seguimiento.
@@ -579,11 +565,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-3 py-1.5 border border-slate-300 text-slate-600 rounded-lg text-xs cursor-pointer">Cancelar</button>
-                <button
-                  type="submit"
-                  disabled={movementKind === 'ABONO' && !editingCharge && creditableConcepts.length === 0}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-lg text-xs cursor-pointer"
-                >
+                <button type="submit" className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer">
                   {editingCharge ? 'Guardar cambios' : movementKind === 'ABONO' ? 'Registrar abono' : 'Registrar cargo'}
                 </button>
               </div>
