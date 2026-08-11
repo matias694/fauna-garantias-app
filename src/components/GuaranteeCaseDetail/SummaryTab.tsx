@@ -23,14 +23,18 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
     setNextManagement(guaranteeCase.nextManagement || '');
     setNextDate(parseFormattedDateToInput(guaranteeCase.nextManagementDate || ''));
     setNextResp(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
-  }, [guaranteeCase.id, guaranteeCase.nextManagement, guaranteeCase.nextManagementDate, guaranteeCase.nextManagementResponsible, guaranteeCase.responsible]);
+    if (guaranteeCase.isCompleted || guaranteeCase.isClosed) setEditingNextManagement(false);
+  }, [guaranteeCase.id, guaranteeCase.nextManagement, guaranteeCase.nextManagementDate, guaranteeCase.nextManagementResponsible, guaranteeCase.responsible, guaranteeCase.isCompleted, guaranteeCase.isClosed]);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
   const settlement = getSettlementState(guaranteeCase, receivable, settings);
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
-  const isOverdue = daysInProcess > settings.maxLiquidationDays;
-  const isNearDeadline = daysInProcess >= settings.alertDay && !isOverdue;
+  const todayInput = new Date().toISOString().split('T')[0];
+  const deadlineInput = parseFormattedDateToInput(guaranteeCase.deadlineDate || '');
+  const alertInput = parseFormattedDateToInput(guaranteeCase.alertDate || '');
+  const isOverdue = Boolean(deadlineInput && todayInput > deadlineInput);
+  const isNearDeadline = Boolean(alertInput && todayInput >= alertInput && !isOverdue);
   const shouldShowDeadlineAlert = !guaranteeCase.isCompleted && !guaranteeCase.isClosed && (isOverdue || isNearDeadline);
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
 
@@ -84,6 +88,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
 
   const handleSaveNextManagement = (e: React.FormEvent) => {
     e.preventDefault();
+    if (guaranteeCase.isCompleted || guaranteeCase.isClosed) return;
 
     const oldManagement = guaranteeCase.nextManagement || '';
     const oldDate = parseFormattedDateToInput(guaranteeCase.nextManagementDate || '');
@@ -224,9 +229,11 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
               <strong className="text-sm text-slate-800 block truncate">{guaranteeCase.nextManagement || 'Sin próxima gestión programada'}</strong>
               <span className="text-[10px] text-slate-500">{guaranteeCase.nextManagementDate ? formatDate(guaranteeCase.nextManagementDate) : 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}</span>
             </div>
-            <button type="button" onClick={() => setEditingNextManagement(true)} className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer">
-              <Edit3 className="w-3.5 h-3.5" /> Editar
-            </button>
+            {!guaranteeCase.isCompleted && (
+              <button type="button" onClick={() => setEditingNextManagement(true)} className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                <Edit3 className="w-3.5 h-3.5" /> Editar
+              </button>
+            )}
           </div>
         )}
       </section>
