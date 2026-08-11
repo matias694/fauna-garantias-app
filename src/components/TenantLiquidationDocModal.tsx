@@ -23,8 +23,29 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
 
   if (!isOpen) return null;
 
-  const fin = calculateGuaranteeFinances(guaranteeCase, settings);
-  const todayStr = formatDate(new Date().toISOString().split('T')[0]);
+  const liveFin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const snapshot = guaranteeCase.liquidationSnapshot;
+  const isDraft = guaranteeCase.liquidationStatus !== 'EMITIDA' || !snapshot;
+  const charges = snapshot?.charges || guaranteeCase.charges;
+  const issueDate = snapshot?.issuedDate || formatDate(new Date().toISOString().split('T')[0]);
+  const documentNumber = snapshot?.tenantDocumentNumber || `LIQ-AR-${guaranteeCase.id}`;
+
+  const guaranteeAmount = snapshot?.financials.guaranteeAmount ?? liveFin.guaranteeAmount;
+  const totalCharges = snapshot?.financials.totalCharges ?? liveFin.totalCharges;
+  const refundToTenant = snapshot?.financials.refundToTenant ?? liveFin.refundToTenant;
+  const tenantDeficit = snapshot?.financials.tenantDeficit ?? liveFin.tenantDeficit;
+  const rawBalance = guaranteeAmount - totalCharges;
+  const isSurplus = rawBalance > 0;
+  const isExact = rawBalance === 0;
+  const isInsufficient = rawBalance < 0;
+
+  const tenantName = snapshot?.tenantName || guaranteeCase.tenantName;
+  const tenantRut = snapshot?.tenantRut || guaranteeCase.tenantRut;
+  const tenantEmail = snapshot?.tenantEmail || guaranteeCase.tenantEmail;
+  const propertyAddress = snapshot?.propertyAddress || guaranteeCase.propertyAddress;
+  const propertyUnit = snapshot?.propertyUnit || guaranteeCase.propertyUnit;
+  const propertyComuna = snapshot?.propertyComuna || guaranteeCase.propertyComuna;
+  const receptionDate = snapshot?.receptionDate || guaranteeCase.receptionDate;
 
   const handleDownload = () => printElementAsPdf(
     documentRef.current,
@@ -48,6 +69,12 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
         </div>
 
         <div ref={documentRef} className="p-8 space-y-6 overflow-y-auto font-sans text-slate-800 text-xs bg-white">
+          {isDraft && (
+            <div className="border-2 border-dashed border-amber-300 bg-amber-50 text-amber-900 rounded-xl px-4 py-2 text-center text-xs font-extrabold tracking-[0.2em] uppercase">
+              BORRADOR · NO EMITIDO
+            </div>
+          )}
+
           <div className="flex items-start justify-between border-b border-slate-200 pb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#1E382B] text-white flex items-center justify-center p-2">
@@ -61,23 +88,23 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
 
             <div className="text-right">
               <span className="text-xs uppercase font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 block w-fit ml-auto mb-1">LIQUIDACIÓN DE GARANTÍA</span>
-              <p className="text-slate-500 font-mono text-[11px]">N° Documento: <strong>LIQ-AR-{guaranteeCase.id}</strong></p>
-              <p className="text-slate-500 text-[11px]">Fecha Emisión: <strong>{todayStr}</strong></p>
+              <p className="text-slate-500 font-mono text-[11px]">N° Documento: <strong>{documentNumber}</strong></p>
+              <p className="text-slate-500 text-[11px]">Fecha Emisión: <strong>{isDraft ? 'Pendiente de confirmar' : issueDate}</strong></p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Datos del Arrendatario</span>
-              <strong className="text-slate-900 text-sm block">{guaranteeCase.tenantName}</strong>
-              <p className="text-slate-600">RUT: {guaranteeCase.tenantRut || 'N/A'}</p>
-              <p className="text-slate-600">Email: {guaranteeCase.tenantEmail || 'N/A'}</p>
+              <strong className="text-slate-900 text-sm block">{tenantName}</strong>
+              <p className="text-slate-600">RUT: {tenantRut || 'N/A'}</p>
+              <p className="text-slate-600">Email: {tenantEmail || 'N/A'}</p>
             </div>
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Propiedad Arrendada</span>
-              <strong className="text-slate-900 text-sm block">{guaranteeCase.propertyAddress}, {guaranteeCase.propertyUnit}</strong>
-              <p className="text-slate-600">Comuna: {guaranteeCase.propertyComuna}</p>
-              <p className="text-slate-600">Fecha Recepción Propiedad: {formatDate(guaranteeCase.receptionDate)}</p>
+              <strong className="text-slate-900 text-sm block">{propertyAddress}, {propertyUnit}</strong>
+              <p className="text-slate-600">Comuna: {propertyComuna}</p>
+              <p className="text-slate-600">Fecha Recepción Propiedad: {formatDate(receptionDate)}</p>
             </div>
           </div>
 
@@ -94,11 +121,11 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {guaranteeCase.charges.length === 0 ? (
+                {charges.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="p-4 text-center text-slate-500 italic">No se registraron cargos ni abonos para esta liquidación.</td>
                   </tr>
-                ) : guaranteeCase.charges.map((ch, idx) => {
+                ) : charges.map((ch, idx) => {
                   const isCredit = ch.amount < 0;
                   return (
                     <tr key={ch.id}>
@@ -115,25 +142,27 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
               <tfoot className="border-t-2 border-slate-300 bg-slate-50">
                 <tr className="border-b border-slate-200">
                   <td colSpan={3} className="p-2.5 text-right text-slate-600 font-semibold">Total cargos y abonos</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">-{formatCLP(fin.totalCharges)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                    {totalCharges < 0 ? '+' : '-'}{formatCLP(Math.abs(totalCharges))}
+                  </td>
                 </tr>
                 <tr className="border-b border-slate-200">
                   <td colSpan={3} className="p-2.5 text-right text-slate-600">Garantía recibida en custodia</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.guaranteeAmount)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(guaranteeAmount)}</td>
                 </tr>
                 <tr className="bg-white border-t-2 border-slate-300">
                   <td colSpan={3} className="p-3 text-right text-sm font-extrabold text-slate-900">RESULTADO LIQUIDACIÓN</td>
-                  <td className={`p-3 text-right font-mono text-base font-black ${fin.isInsufficient ? 'text-amber-700' : 'text-emerald-700'}`}>
-                    {fin.isSurplus && `${formatCLP(fin.refundToTenant)} A DEVOLVER`}
-                    {fin.isExact && '$0'}
-                    {fin.isInsufficient && `${formatCLP(fin.tenantDeficit)} PENDIENTE`}
+                  <td className={`p-3 text-right font-mono text-base font-black ${isInsufficient ? 'text-amber-700' : 'text-emerald-700'}`}>
+                    {isSurplus && `${formatCLP(refundToTenant)} A DEVOLVER`}
+                    {isExact && '$0'}
+                    {isInsufficient && `${formatCLP(tenantDeficit)} PENDIENTE`}
                   </td>
                 </tr>
                 <tr className="bg-white">
                   <td colSpan={4} className="px-3 pb-3 text-right text-[10px] text-slate-500">
-                    {fin.isSurplus && 'Saldo a favor del arrendatario'}
-                    {fin.isExact && 'Liquidación sin saldo pendiente'}
-                    {fin.isInsufficient && 'Saldo pendiente de pago del arrendatario'}
+                    {isSurplus && 'Saldo a favor del arrendatario'}
+                    {isExact && 'Liquidación sin saldo pendiente'}
+                    {isInsufficient && 'Saldo pendiente de pago del arrendatario'}
                   </td>
                 </tr>
               </tfoot>
