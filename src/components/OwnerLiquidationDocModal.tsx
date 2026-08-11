@@ -127,8 +127,8 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 </tr>
                 {hasFullBenefit && (
                   <tr className="border-b border-slate-200">
-                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Cobertura Plan Full aplicada a daños</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.fullCoverageApplied)}</td>
+                    <td colSpan={3} className="p-2.5 text-right text-slate-600">Financiamiento neto Plan Full</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.faunaFinancingRequired)}</td>
                   </tr>
                 )}
                 {ownerSettlement.ownerContributionApplied > 0 && (
@@ -176,7 +176,8 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               <div>
                 <span className="block text-[10px] font-extrabold uppercase tracking-wider text-emerald-700">Beneficio Plan Full aplicado</span>
                 <p className="text-xs leading-relaxed mt-0.5">
-                  La cobertura aplicada redujo en <strong>{formatCLP(fin.fullCoverageApplied)}</strong> lo que habría debido asumir el propietario por daños y reparaciones. El Plan Full no cubre gastos comunes ni servicios.
+                  La cobertura aplicada a daños fue de <strong>{formatCLP(fin.fullCoverageApplied)}</strong>. El Plan Full no cubre gastos comunes ni servicios.
+                  {fin.creditsForFaunaRecovery > 0 && <> Del excedente del abono proporcional, <strong>{formatCLP(fin.creditsForFaunaRecovery)}</strong> se compensaron contra este financiamiento, por lo que Fauna sostiene un neto de <strong>{formatCLP(fin.faunaFinancingRequired)}</strong>.</>}
                 </p>
               </div>
             </div>
