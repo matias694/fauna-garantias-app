@@ -139,9 +139,13 @@ export interface Charge {
   photos: string[];
 }
 
+export type OwnerPaymentPurpose = 'REPARACIONES' | 'SERVICIOS';
+export type OwnerPaymentMode = 'TRANSFERIDO_FAUNA' | 'PAGADO_DIRECTO';
+
 export type FinancialMovementType =
   | 'GARANTIA'
   | 'CARGO'
+  | 'ABONO_ARRENDATARIO'
   | 'DEVOLUCION_ARRENDATARIO'
   | 'APORTE_PROPIETARIO'
   | 'COBERTURA_FULL'
@@ -150,6 +154,8 @@ export type FinancialMovementType =
   | 'RECUPERACION_PROPIETARIO'
   | 'RECUPERACION_FAUNA'
   | 'SALDO_PAGO_ARRENDATARIO'
+  | 'CASTIGO_PROPIETARIO'
+  | 'CASTIGO_FAUNA'
   | 'AJUSTE';
 
 export interface FinancialMovement {
@@ -164,6 +170,8 @@ export interface FinancialMovement {
   userId?: string;
   reference: string;
   observation: string;
+  ownerPaymentPurpose?: OwnerPaymentPurpose;
+  ownerPaymentMode?: OwnerPaymentMode;
 }
 
 export type ReceivableStatus =
@@ -219,6 +227,42 @@ export interface CaseAttachment {
   category?: string;
 }
 
+export interface LiquidationSnapshotFinancials {
+  guaranteeAmount: number;
+  grossCharges: number;
+  tenantCredits: number;
+  totalCharges: number;
+  tenantDeficit: number;
+  refundToTenant: number;
+  fullCoverageApplied: number;
+  faunaFinancingRequired: number;
+  ownerRepairFundingRequired: number;
+  ownerServiceObligation: number;
+  ownerRepairPendingAtIssue: number;
+  ownerServicePendingAtIssue: number;
+  ownerContributionAppliedAtIssue: number;
+}
+
+export interface LiquidationSnapshot {
+  calculationVersion: '2026-08-v1';
+  issuedAt: string;
+  issuedDate: string;
+  tenantDocumentNumber: string;
+  ownerDocumentNumber: string;
+  propertyAddress: string;
+  propertyComuna: string;
+  propertyUnit: string;
+  receptionDate: string;
+  plan: AdministrationPlan;
+  ownerName: string;
+  ownerRut: string;
+  tenantName: string;
+  tenantRut: string;
+  tenantEmail: string;
+  charges: Charge[];
+  financials: LiquidationSnapshotFinancials;
+}
+
 export interface GuaranteeCase {
   id: string;
   propertyAddress: string;
@@ -249,6 +293,7 @@ export interface GuaranteeCase {
 
   liquidationStatus: LiquidationStatus;
   requirements: LiquidationRequirement[];
+  liquidationSnapshot?: LiquidationSnapshot;
 
   blockedBy: BlockedByReason;
   blockedReasonNotes?: string;

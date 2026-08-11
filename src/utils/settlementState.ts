@@ -21,8 +21,8 @@ export interface SettlementState {
 
 /**
  * Devuelve el estado ACTUAL posterior a la liquidación.
- * El resultado financiero original no cambia, pero una deuda puede pasar de
- * pendiente a parcial, pagada o incobrable, y una devolución puede transferirse.
+ * Una vez emitida, el monto original proviene del snapshot y no se recalcula con
+ * fórmulas futuras. La cobranza sí sigue evolucionando mediante Receivable.
  */
 export function getSettlementState(
   guaranteeCase: GuaranteeCase,
@@ -30,6 +30,9 @@ export function getSettlementState(
   settings: SystemSettings
 ): SettlementState {
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const snapshot = guaranteeCase.liquidationSnapshot;
+  const originalDeficit = snapshot?.financials.tenantDeficit ?? fin.tenantDeficit;
+  const originalRefund = snapshot?.financials.refundToTenant ?? fin.refundToTenant;
 
   if (guaranteeCase.liquidationStatus !== 'EMITIDA') {
     return {
@@ -41,17 +44,17 @@ export function getSettlementState(
     };
   }
 
-  if (fin.isSurplus) {
+  if (originalRefund > 0) {
     return {
       kind: guaranteeCase.refund?.status === 'TRANSFERIDA' ? 'REFUND_TRANSFERRED' : 'REFUND_PENDING',
-      originalAmount: fin.refundToTenant,
-      paidAmount: guaranteeCase.refund?.status === 'TRANSFERIDA' ? fin.refundToTenant : 0,
-      pendingAmount: guaranteeCase.refund?.status === 'TRANSFERIDA' ? 0 : fin.refundToTenant,
-      projectedAmount: fin.refundToTenant
+      originalAmount: originalRefund,
+      paidAmount: guaranteeCase.refund?.status === 'TRANSFERIDA' ? originalRefund : 0,
+      pendingAmount: guaranteeCase.refund?.status === 'TRANSFERIDA' ? 0 : originalRefund,
+      projectedAmount: originalRefund
     };
   }
 
-  if (fin.isExact) {
+  if (originalDeficit <= 0) {
     return {
       kind: 'NO_BALANCE',
       originalAmount: 0,
@@ -62,7 +65,7 @@ export function getSettlementState(
   }
 
   const status = receivable?.status || guaranteeCase.receivableStatus || 'PENDIENTE';
-  const originalAmount = receivable?.originalAmount ?? fin.tenantDeficit;
+  const originalAmount = receivable?.originalAmount ?? originalDeficit;
   const paidAmount = receivable?.totalPaid ?? (status === 'PAGADA' ? originalAmount : 0);
   const pendingAmount = receivable?.pendingBalance ?? (status === 'PAGADA' ? 0 : originalAmount);
 
@@ -72,7 +75,7 @@ export function getSettlementState(
       originalAmount,
       paidAmount,
       pendingAmount: 0,
-      projectedAmount: fin.tenantDeficit
+      projectedAmount: originalDeficit
     };
   }
 
@@ -82,7 +85,7 @@ export function getSettlementState(
       originalAmount,
       paidAmount,
       pendingAmount,
-      projectedAmount: fin.tenantDeficit
+      projectedAmount: originalDeficit
     };
   }
 
@@ -91,6 +94,6 @@ export function getSettlementState(
     originalAmount,
     paidAmount,
     pendingAmount,
-    projectedAmount: fin.tenantDeficit
+    projectedAmount: originalDeficit
   };
 }

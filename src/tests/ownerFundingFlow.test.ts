@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import type { GuaranteeCase, SystemSettings, FinancialMovement } from '../types';
+import type { GuaranteeCase, SystemSettings, FinancialMovement, OwnerPaymentPurpose } from '../types';
 import {
   calculateFundingReadiness,
   calculateGuaranteeFinances,
@@ -22,7 +22,12 @@ const settings: SystemSettings = {
   responsiblesList: ['Usuario prueba']
 };
 
-const movement = (type: FinancialMovement['type'], amount: number, id: string): FinancialMovement => ({
+const movement = (
+  type: FinancialMovement['type'],
+  amount: number,
+  id: string,
+  ownerPaymentPurpose?: OwnerPaymentPurpose
+): FinancialMovement => ({
   id,
   caseId: 'GAR-FULL-FLUJO-PROP',
   date: '11/08/2026',
@@ -32,7 +37,8 @@ const movement = (type: FinancialMovement['type'], amount: number, id: string): 
   amount,
   user: 'Usuario prueba',
   reference: id,
-  observation: ''
+  observation: '',
+  ownerPaymentPurpose
 });
 
 const baseCase: GuaranteeCase = {
@@ -99,8 +105,6 @@ const baseCase: GuaranteeCase = {
   isClosed: false
 };
 
-// Resultado original: garantía 400 + Full 400 no alcanzan a cubrir 950 de daños.
-// El propietario debe aportar 150 para ejecutar reparaciones y quedan 200 de servicios.
 const fin = calculateGuaranteeFinances(baseCase, settings);
 assert.equal(fin.guaranteeForDamage, 400000);
 assert.equal(fin.fullCoverageApplied, 400000);
@@ -109,14 +113,26 @@ assert.equal(fin.ownerServiceObligation, 200000);
 assert.equal(fin.ownerContributionRequired, 350000);
 assert.equal(fin.tenantReceivableAmount, 750000);
 
+// CRÍTICO: pagar servicios no puede financiar reparaciones.
+const ownerPaidServicesFirst: GuaranteeCase = {
+  ...baseCase,
+  ownerContribution: 200000,
+  movements: [movement('APORTE_PROPIETARIO', 200000, 'SERVICIOS-DIRECTO', 'SERVICIOS')]
+};
+const servicesFirst = calculateFundingReadiness(ownerPaidServicesFirst, settings);
+assert.equal(servicesFirst.ownerServiceFundedTotal, 200000);
+assert.equal(servicesFirst.ownerServicePending, 0);
+assert.equal(servicesFirst.ownerRepairFundedTotal, 0);
+assert.equal(servicesFirst.ownerRepairPendingProvision, 150000);
+assert.equal(servicesFirst.readyToConfirm, false);
+
 // El propietario aporta SOLO lo necesario para terminar reparaciones.
-// Eso habilita confirmar la liquidación, aunque los 200 de servicios sigan pendientes.
 const ownerRepairOnly: GuaranteeCase = {
   ...baseCase,
   ownerContribution: 150000,
   movements: [
     movement('FINANCIAMIENTO_FAUNA', 400000, 'FULL-EJECUTADO'),
-    movement('APORTE_PROPIETARIO', 150000, 'APORTE-REPARACION')
+    movement('APORTE_PROPIETARIO', 150000, 'APORTE-REPARACION', 'REPARACIONES')
   ]
 };
 const ready = calculateFundingReadiness(ownerRepairOnly, settings);
@@ -125,8 +141,7 @@ assert.equal(ready.ownerServicePending, 200000);
 assert.equal(ready.readyToConfirm, true);
 
 // Si luego el arrendatario paga los 750 completos:
-// 150 recuperan al propietario, 400 recuperan a Fauna y 200 cubren los servicios que
-// todavía no había pagado el propietario. No corresponde devolverle esos 200 al dueño.
+// 150 recuperan al propietario, 400 recuperan a Fauna y 200 cubren servicios no pagados.
 const paymentWithoutOwnerServicePayment = calculatePaymentDistribution(750000, 150000, 400000);
 assert.equal(paymentWithoutOwnerServicePayment.ownerRecovery, 150000);
 assert.equal(paymentWithoutOwnerServicePayment.faunaRecovery, 400000);
@@ -145,11 +160,23 @@ const settledWithoutOwnerServicePayment: GuaranteeCase = {
 };
 assert.equal(calculateFundingReadiness(settledWithoutOwnerServicePayment, settings).ownerServicePending, 0);
 
-// Si el propietario SÍ pagó también los 200 de servicios antes de cobrar al arrendatario,
-// deben registrarse. Entonces los 750 del arrendatario recuperan 350 al propietario y 400 a Fauna.
+// Si el propietario sí pagó reparaciones y servicios, ambas bolsas quedan reconocidas y
+// el pago posterior del arrendatario recupera primero los 350 del propietario.
+const ownerPaidEverything: GuaranteeCase = {
+  ...baseCase,
+  ownerContribution: 350000,
+  movements: [
+    movement('APORTE_PROPIETARIO', 150000, 'PROP-REPARACIONES', 'REPARACIONES'),
+    movement('APORTE_PROPIETARIO', 200000, 'PROP-SERVICIOS', 'SERVICIOS')
+  ]
+};
+const everythingReady = calculateFundingReadiness(ownerPaidEverything, settings);
+assert.equal(everythingReady.ownerRepairPendingProvision, 0);
+assert.equal(everythingReady.ownerServicePending, 0);
+
 const paymentAfterOwnerPaidEverything = calculatePaymentDistribution(750000, 350000, 400000);
 assert.equal(paymentAfterOwnerPaidEverything.ownerRecovery, 350000);
 assert.equal(paymentAfterOwnerPaidEverything.faunaRecovery, 400000);
 assert.equal(paymentAfterOwnerPaidEverything.surplusPayment, 0);
 
-console.log('✓ Flujo Full con aporte propietario y servicios validado');
+console.log('✓ Flujo Full con fondos de propietario separados por destino validado');

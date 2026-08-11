@@ -62,7 +62,11 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
     }
   };
 
-  const pendingRepairs = guaranteeCase.repairs.filter(r => r.status !== 'TERMINADA' && r.status !== 'CANCELADA');
+  const pendingRepairs = guaranteeCase.charges.filter(ch => {
+    if (ch.amount <= 0 || ch.type !== 'DAÑO_REPARACION') return false;
+    const status = ch.repairTracking?.status || 'PENDIENTE';
+    return status !== 'TERMINADA' && status !== 'CANCELADA';
+  });
 
   const tabClass = (tab: CaseTab) => `px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
     activeTab === tab
@@ -221,7 +225,7 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                   <div>
                     <strong className="font-bold block mb-0.5">Reparaciones Pendientes ({pendingRepairs.length})</strong>
-                    <p>No es posible cerrar el caso mientras existan trabajos pendientes o en ejecución. Revísalos en Cargos y abonos &gt; Reparaciones.</p>
+                    <p>No es posible cerrar el caso mientras existan trabajos pendientes o en ejecución. Revísalos en Cargos y abonos.</p>
                   </div>
                 </div>
               )}

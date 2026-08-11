@@ -5,7 +5,8 @@ import { formatCLP, formatDate } from '../utils/formatters';
 import {
   calculateFundingReadiness,
   calculateGuaranteeFinances,
-  calculateOwnerLiquidationReconciliation
+  calculateOwnerLiquidationReconciliation,
+  isChargeIncludedInLiquidation
 } from '../utils/calculations';
 import { printElementAsPdf } from '../utils/printElementAsPdf';
 import { FaunaIsotipo } from './FaunaBrand';
@@ -27,13 +28,33 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
 
   if (!isOpen) return null;
 
-  const fin = calculateGuaranteeFinances(guaranteeCase, settings);
-  const readiness = calculateFundingReadiness(guaranteeCase, settings);
-  const ownerSettlement = calculateOwnerLiquidationReconciliation(guaranteeCase, settings);
-  const todayStr = formatDate(new Date().toISOString().split('T')[0]);
-  const ownerTotalPending = ownerSettlement.ownerRepairPending + ownerSettlement.ownerServicePending;
-  const ownerFullBenefit = fin.faunaFinancingRequired;
-  const hasFullBenefit = guaranteeCase.plan === 'FULL' && ownerFullBenefit > 0;
+  const liveFin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const liveReadiness = calculateFundingReadiness(guaranteeCase, settings);
+  const liveOwnerSettlement = calculateOwnerLiquidationReconciliation(guaranteeCase, settings);
+  const snapshot = guaranteeCase.liquidationSnapshot;
+  const isDraft = guaranteeCase.liquidationStatus !== 'EMITIDA' || !snapshot;
+
+  const charges = (snapshot?.charges || guaranteeCase.charges).filter(isChargeIncludedInLiquidation);
+  const issueDate = snapshot?.issuedDate || formatDate(new Date().toISOString().split('T')[0]);
+  const documentNumber = snapshot?.ownerDocumentNumber || `LIQ-PROP-${guaranteeCase.id}`;
+  const guaranteeAmount = snapshot?.financials.guaranteeAmount ?? liveFin.guaranteeAmount;
+  const totalCharges = snapshot?.financials.totalCharges ?? liveFin.totalCharges;
+  const ownerRepairPending = snapshot?.financials.ownerRepairPendingAtIssue ?? liveOwnerSettlement.ownerRepairPending;
+  const ownerServicePending = snapshot?.financials.ownerServicePendingAtIssue ?? liveOwnerSettlement.ownerServicePending;
+  const ownerTotalPending = ownerRepairPending + ownerServicePending;
+  const ownerContributionApplied = snapshot?.financials.ownerContributionAppliedAtIssue ?? liveOwnerSettlement.ownerContributionApplied;
+  const refundToTenant = snapshot?.financials.refundToTenant ?? liveOwnerSettlement.refundToTenant;
+  const ownerFullBenefit = snapshot?.financials.fullCoverageApplied ?? liveFin.fullCoverageApplied;
+  const hasFullBenefit = (snapshot?.plan || guaranteeCase.plan) === 'FULL' && ownerFullBenefit > 0;
+  const postTenantServices = isDraft ? liveReadiness.ownerServiceSettledFromTenant : 0;
+
+  const ownerName = snapshot?.ownerName || guaranteeCase.ownerName;
+  const ownerRut = snapshot?.ownerRut || guaranteeCase.ownerRut;
+  const plan = snapshot?.plan || guaranteeCase.plan;
+  const propertyAddress = snapshot?.propertyAddress || guaranteeCase.propertyAddress;
+  const propertyUnit = snapshot?.propertyUnit || guaranteeCase.propertyUnit;
+  const propertyComuna = snapshot?.propertyComuna || guaranteeCase.propertyComuna;
+  const receptionDate = snapshot?.receptionDate || guaranteeCase.receptionDate;
 
   const handleDownload = () => printElementAsPdf(
     documentRef.current,
@@ -57,6 +78,12 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
         </div>
 
         <div ref={documentRef} className="p-8 space-y-6 overflow-y-auto font-sans text-slate-800 text-xs bg-white">
+          {isDraft && (
+            <div className="border-2 border-dashed border-amber-300 bg-amber-50 text-amber-900 rounded-xl px-4 py-2 text-center text-xs font-extrabold tracking-[0.2em] uppercase">
+              BORRADOR · NO EMITIDO
+            </div>
+          )}
+
           <div className="flex items-start justify-between border-b border-slate-200 pb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-[#1E382B] text-white flex items-center justify-center p-2">
@@ -70,23 +97,23 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
 
             <div className="text-right">
               <span className="text-xs uppercase font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 block w-fit ml-auto mb-1">LIQUIDACIÓN DE GARANTÍA</span>
-              <p className="text-slate-500 font-mono text-[11px]">N° Documento: <strong>LIQ-PROP-{guaranteeCase.id}</strong></p>
-              <p className="text-slate-500 text-[11px]">Fecha Emisión: <strong>{todayStr}</strong></p>
+              <p className="text-slate-500 font-mono text-[11px]">N° Documento: <strong>{documentNumber}</strong></p>
+              <p className="text-slate-500 text-[11px]">Fecha Emisión: <strong>{isDraft ? 'Pendiente de confirmar' : issueDate}</strong></p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Datos del Propietario</span>
-              <strong className="text-slate-900 text-sm block">{guaranteeCase.ownerName}</strong>
-              <p className="text-slate-600">RUT: {guaranteeCase.ownerRut || 'N/A'}</p>
-              <p className="text-slate-600">Plan contratado: <strong>Plan {guaranteeCase.plan}</strong></p>
+              <strong className="text-slate-900 text-sm block">{ownerName}</strong>
+              <p className="text-slate-600">RUT: {ownerRut || 'N/A'}</p>
+              <p className="text-slate-600">Plan contratado: <strong>Plan {plan}</strong></p>
             </div>
             <div className="space-y-1">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">Propiedad Arrendada</span>
-              <strong className="text-slate-900 text-sm block">{guaranteeCase.propertyAddress}, {guaranteeCase.propertyUnit}</strong>
-              <p className="text-slate-600">Comuna: {guaranteeCase.propertyComuna}</p>
-              <p className="text-slate-600">Fecha Recepción Propiedad: {formatDate(guaranteeCase.receptionDate)}</p>
+              <strong className="text-slate-900 text-sm block">{propertyAddress}, {propertyUnit}</strong>
+              <p className="text-slate-600">Comuna: {propertyComuna}</p>
+              <p className="text-slate-600">Fecha Recepción Propiedad: {formatDate(receptionDate)}</p>
             </div>
           </div>
 
@@ -103,11 +130,11 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {guaranteeCase.charges.length === 0 ? (
+                {charges.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="p-4 text-center text-slate-500 italic">No se registraron cargos ni abonos para esta liquidación.</td>
                   </tr>
-                ) : guaranteeCase.charges.map((ch, idx) => {
+                ) : charges.map((ch, idx) => {
                   const isCredit = ch.amount < 0;
                   return (
                     <tr key={ch.id}>
@@ -124,11 +151,13 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
               <tfoot className="border-t-2 border-slate-300 bg-slate-50">
                 <tr className="border-b border-slate-200">
                   <td colSpan={3} className="p-2.5 text-right text-slate-600 font-semibold">Total cargos y abonos</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">-{formatCLP(fin.totalCharges)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                    {totalCharges < 0 ? '+' : '-'}{formatCLP(Math.abs(totalCharges))}
+                  </td>
                 </tr>
                 <tr className="border-b border-slate-200">
                   <td colSpan={3} className="p-2.5 text-right text-slate-600">Garantía disponible del contrato</td>
-                  <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(fin.guaranteeAmount)}</td>
+                  <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(guaranteeAmount)}</td>
                 </tr>
                 {hasFullBenefit && (
                   <tr className="border-b border-slate-200">
@@ -136,22 +165,22 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                     <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(ownerFullBenefit)}</td>
                   </tr>
                 )}
-                {ownerSettlement.ownerContributionApplied > 0 && (
+                {ownerContributionApplied > 0 && (
                   <tr className="border-b border-slate-200">
                     <td colSpan={3} className="p-2.5 text-right text-slate-600">Fondos pagados/provisionados por el propietario</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-blue-700">+{formatCLP(ownerSettlement.ownerContributionApplied)}</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-blue-700">+{formatCLP(ownerContributionApplied)}</td>
                   </tr>
                 )}
-                {readiness.ownerServiceSettledFromTenant > 0 && (
+                {postTenantServices > 0 && (
                   <tr className="border-b border-slate-200">
                     <td colSpan={3} className="p-2.5 text-right text-slate-600">Pago posterior del arrendatario aplicado a gastos comunes/servicios</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(readiness.ownerServiceSettledFromTenant)}</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">+{formatCLP(postTenantServices)}</td>
                   </tr>
                 )}
-                {ownerSettlement.refundToTenant > 0 && (
+                {refundToTenant > 0 && (
                   <tr className="border-b border-slate-200">
                     <td colSpan={3} className="p-2.5 text-right text-slate-600">Saldo de garantía a devolver al arrendatario</td>
-                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">{formatCLP(ownerSettlement.refundToTenant)}</td>
+                    <td className="p-2.5 text-right font-mono font-bold text-emerald-700">{formatCLP(refundToTenant)}</td>
                   </tr>
                 )}
                 <tr className="bg-white border-t-2 border-slate-300">
@@ -163,9 +192,9 @@ export const OwnerLiquidationDocModal: React.FC<OwnerLiquidationDocModalProps> =
                 {ownerTotalPending > 0 && (
                   <tr className="bg-white">
                     <td colSpan={4} className="px-3 pb-3 text-right text-[10px] text-slate-500">
-                      {ownerSettlement.ownerRepairPending > 0 && <span>{formatCLP(ownerSettlement.ownerRepairPending)} reparaciones</span>}
-                      {ownerSettlement.ownerRepairPending > 0 && ownerSettlement.ownerServicePending > 0 && <span> · </span>}
-                      {ownerSettlement.ownerServicePending > 0 && <span>{formatCLP(ownerSettlement.ownerServicePending)} gastos comunes/servicios</span>}
+                      {ownerRepairPending > 0 && <span>{formatCLP(ownerRepairPending)} reparaciones</span>}
+                      {ownerRepairPending > 0 && ownerServicePending > 0 && <span> · </span>}
+                      {ownerServicePending > 0 && <span>{formatCLP(ownerServicePending)} gastos comunes/servicios</span>}
                     </td>
                   </tr>
                 )}

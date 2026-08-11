@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
-import { formatCLP, formatDate } from '../../utils/formatters';
-import { calculateGuaranteeFinances } from '../../utils/calculations';
+import { formatCLP } from '../../utils/formatters';
+import { calculateFundingReadiness, calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
 import { CheckCircle2, AlertTriangle, FileText, Plus, Banknote, Lock, Clock3, X } from 'lucide-react';
 
@@ -34,16 +34,29 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   const [refundNotes, setRefundNotes] = useState('');
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const readiness = calculateFundingReadiness(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
   const settlement = getSettlementState(guaranteeCase, receivable, settings);
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
-  const isReady = guaranteeCase.liquidationStatus === 'LISTA';
+  const checklistReady = guaranteeCase.liquidationStatus === 'LISTA';
+  const hasManualBlock = guaranteeCase.blockedBy !== 'SIN_BLOQUEO';
+  const canConfirm = checklistReady && readiness.readyToConfirm && !hasManualBlock;
+
+  const originalRefund = guaranteeCase.liquidationSnapshot?.financials.refundToTenant ?? fin.refundToTenant;
+  const originalDeficit = guaranteeCase.liquidationSnapshot?.financials.tenantDeficit ?? fin.tenantDeficit;
+  const originalIsSurplus = originalRefund > 0;
+  const originalIsInsufficient = originalDeficit > 0;
+  const originalIsExact = !originalIsSurplus && !originalIsInsufficient;
 
   const stageLabel = isConfirmed
     ? 'Confirmada'
-    : isReady
-      ? 'Lista para confirmar'
-      : 'En preparación';
+    : checklistReady && hasManualBlock
+      ? 'Lista con bloqueo'
+      : checklistReady && !readiness.readyToConfirm
+        ? 'Lista · faltan fondos para reparar'
+        : checklistReady
+          ? 'Lista para confirmar'
+          : 'En preparación';
 
   const projectedResult = fin.isSurplus
     ? `Devolver ${formatCLP(fin.refundToTenant)}`
@@ -77,11 +90,12 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   };
 
   const handleConfirmLiquidation = () => {
-    if (!isReady) return;
+    if (!canConfirm) return;
     setShowConfirmModal(true);
   };
 
   const confirmLiquidation = () => {
+    if (!canConfirm) return;
     emitLiquidation(guaranteeCase.id);
     setShowConfirmModal(false);
   };
@@ -103,7 +117,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Estado de la liquidación</span>
-            <strong className={`text-sm ${isConfirmed ? 'text-purple-700' : isReady ? 'text-emerald-700' : 'text-amber-700'}`}>{stageLabel}</strong>
+            <strong className={`text-sm ${isConfirmed ? 'text-purple-700' : canConfirm ? 'text-emerald-700' : 'text-amber-700'}`}>{stageLabel}</strong>
           </div>
 
           <div className="flex items-center gap-2">
@@ -149,7 +163,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         {isConfirmed && (
           <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900 flex items-start gap-2.5">
             <Lock className="w-4 h-4 mt-0.5 shrink-0 text-purple-700" />
-            <span><strong>Liquidación confirmada.</strong> El checklist y los cargos/abonos quedaron fijados como parte del resultado original.</span>
+            <span><strong>Liquidación confirmada.</strong> El checklist, los cargos/abonos y el resultado original quedaron congelados en el documento emitido.</span>
           </div>
         )}
 
@@ -201,12 +215,22 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
         <div className="pt-3 border-t border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           <div className="min-w-0">
-            {!isReady && !isConfirmed && (
+            {!checklistReady && !isConfirmed && (
               <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-600" /> Completa los antecedentes pendientes para poder confirmar.
               </span>
             )}
-            {isReady && !isConfirmed && (
+            {checklistReady && hasManualBlock && !isConfirmed && (
+              <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600" /> El caso está bloqueado por {guaranteeCase.blockedBy.toLowerCase()}. Debe quedar “Sin bloqueo” antes de confirmar.
+              </span>
+            )}
+            {checklistReady && !hasManualBlock && !readiness.readyToConfirm && !isConfirmed && (
+              <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600" /> Faltan {formatCLP(readiness.ownerRepairPendingProvision)} del propietario para financiar reparaciones antes de confirmar.
+              </span>
+            )}
+            {canConfirm && !isConfirmed && (
               <div>
                 <span className="text-xs text-emerald-800 font-bold flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Lista para confirmar
@@ -231,9 +255,9 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             {!isConfirmed && (
               <button
                 onClick={handleConfirmLiquidation}
-                disabled={!isReady}
+                disabled={!canConfirm}
                 className={`px-5 py-2 rounded-xl font-bold text-xs shadow-xs inline-flex items-center gap-2 ${
-                  isReady ? 'bg-purple-700 hover:bg-purple-800 text-white cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  canConfirm ? 'bg-purple-700 hover:bg-purple-800 text-white cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 }`}
               >
                 <Lock className="w-4 h-4" /> Confirmar liquidación
@@ -250,13 +274,13 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             <strong className="text-sm text-slate-900">{currentActionLabel}</strong>
           </div>
 
-          {fin.isSurplus && (
+          {originalIsSurplus && (
             <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <strong className="text-xs text-emerald-900 block">
                   {settlement.kind === 'REFUND_TRANSFERRED'
-                    ? `Devolución transferida: ${formatCLP(fin.refundToTenant)}`
-                    : `Devolución al arrendatario: ${formatCLP(fin.refundToTenant)}`}
+                    ? `Devolución transferida: ${formatCLP(originalRefund)}`
+                    : `Devolución al arrendatario: ${formatCLP(originalRefund)}`}
                 </strong>
                 <span className="text-[11px] text-emerald-800">Estado: {guaranteeCase.refund?.status || 'PENDIENTE'}</span>
               </div>
@@ -268,13 +292,13 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             </div>
           )}
 
-          {fin.isExact && (
+          {originalIsExact && (
             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs text-slate-700 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" /> No hay devolución ni cuenta por cobrar.
             </div>
           )}
 
-          {fin.isInsufficient && settlement.kind === 'RECEIVABLE_PAID' && (
+          {originalIsInsufficient && settlement.kind === 'RECEIVABLE_PAID' && (
             <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
               <div className="space-y-1">
@@ -284,7 +308,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             </div>
           )}
 
-          {fin.isInsufficient && (settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL') && (
+          {originalIsInsufficient && (settlement.kind === 'RECEIVABLE_PENDING' || settlement.kind === 'RECEIVABLE_PARTIAL') && (
             <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-start gap-2.5">
               <Clock3 className="w-4 h-4 text-amber-700 mt-0.5 shrink-0" />
               <div className="space-y-1">
@@ -295,7 +319,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             </div>
           )}
 
-          {fin.isInsufficient && settlement.kind === 'RECEIVABLE_UNCOLLECTIBLE' && (
+          {originalIsInsufficient && settlement.kind === 'RECEIVABLE_UNCOLLECTIBLE' && (
             <div className="bg-slate-50 border border-slate-300 p-4 rounded-xl flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-slate-600 mt-0.5 shrink-0" />
               <div className="space-y-1">
@@ -307,7 +331,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         </section>
       )}
 
-      {showConfirmModal && isReady && !isConfirmed && (
+      {showConfirmModal && canConfirm && !isConfirmed && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
@@ -329,7 +353,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
                 <strong className="text-base text-slate-900 block mt-1">{projectedResult}</strong>
               </div>
               <p className="text-slate-600 leading-relaxed">
-                Al confirmar, los cargos y abonos quedarán fijados como resultado original. Las devoluciones, cobranzas y obligaciones posteriores se gestionarán sin modificar esta liquidación.
+                Al confirmar se creará una versión inmutable de esta liquidación. Los cambios futuros de fórmulas o cobranzas posteriores no modificarán el documento emitido.
               </p>
               <p className="text-slate-500 leading-relaxed">
                 Un saldo pendiente del propietario por gastos comunes o servicios puede mantenerse después de confirmar y no bloquea la liquidación.
@@ -353,7 +377,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
             <form onSubmit={handleRegisterRefundSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Monto</label>
-                <input type="text" disabled value={formatCLP(fin.refundToTenant)} className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 font-bold font-mono text-slate-800" />
+                <input type="text" disabled value={formatCLP(originalRefund)} className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 font-bold font-mono text-slate-800" />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Fecha *</label>

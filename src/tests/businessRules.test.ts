@@ -138,6 +138,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 }
 
 // 4) Plan Full: cobertura adicional = 100% del monto de garantía, no del arriendo.
+// La cobertura contractual se materializa al confirmar; servicios pendientes no bloquean.
 {
   const c = baseCase({
     plan: 'FULL',
@@ -170,7 +171,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(ownerSettlement.reconciliationBalance, -100000);
   assert.equal(readiness.ownerPendingProvision, 100000);
   assert.equal(readiness.fullCoveragePendingExecution, 400000);
-  assert.equal(readiness.readyToConfirm, false);
+  assert.equal(readiness.readyToConfirm, true);
   assert.equal(c.ownerContribution, 0);
   assert.equal(c.faunaFinancing, 0);
 }
@@ -214,7 +215,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(ownerSettlement.reconciliationBalance, 0);
 }
 
-// 6) Estándar: una aprobación sin dinero no basta; la provisión efectiva habilita los fondos.
+// 6) Estándar: una aprobación sin dinero no basta; la provisión efectiva habilita reparaciones.
 {
   const withoutProvision = baseCase({
     plan: 'ESTANDAR',
@@ -237,22 +238,23 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
     movements: [{
       id: 'MOV-3', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:00',
       type: 'APORTE_PROPIETARIO' as const, description: 'Provisión de fondos', amount: 200000,
-      user: 'Usuario de prueba', reference: 'PROVISION', observation: ''
+      user: 'Usuario de prueba', reference: 'PROVISION', observation: '', ownerPaymentPurpose: 'REPARACIONES' as const
     }]
   };
   const ready = calculateFundingReadiness(withProvision, settings);
-  assert.equal(ready.ownerPendingProvision, 0);
+  assert.equal(ready.ownerRepairPendingProvision, 0);
   assert.equal(ready.readyToConfirm, true);
 }
 
-// 7) Full: deben existir tanto la provisión del propietario como la ejecución real de la cobertura.
+// 7) Full: no exige registrar manualmente un movimiento Fauna antes de confirmar.
+// El movimiento se genera de forma atómica al emitir la liquidación.
 {
   const c = baseCase({
     plan: 'FULL',
     liquidationStatus: 'LISTA',
     guaranteeAmount: 400000,
-    ownerContribution: 100000,
-    faunaFinancing: 400000,
+    ownerContribution: 0,
+    faunaFinancing: 0,
     charges: [
       {
         id: 'CHG-9', category: 'REPARACIONES', description: 'Daños ficticios', amount: 800000,
@@ -263,23 +265,13 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
         date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
       }
     ],
-    movements: [
-      {
-        id: 'MOV-4', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:00',
-        type: 'APORTE_PROPIETARIO', description: 'Provisión de fondos', amount: 100000,
-        user: 'Usuario de prueba', reference: 'PROVISION', observation: ''
-      },
-      {
-        id: 'MOV-5', caseId: 'GAR-TEST', date: '01/07/2026', time: '10:05',
-        type: 'FINANCIAMIENTO_FAUNA', description: 'Ejecución cobertura Full', amount: 400000,
-        user: 'Usuario de prueba', reference: 'FULL', observation: ''
-      }
-    ]
+    movements: []
   });
 
   const readiness = calculateFundingReadiness(c, settings);
-  assert.equal(readiness.ownerPendingProvision, 0);
-  assert.equal(readiness.fullCoveragePendingExecution, 0);
+  assert.equal(readiness.ownerRepairPendingProvision, 0);
+  assert.equal(readiness.ownerServicePending, 100000);
+  assert.equal(readiness.fullCoveragePendingExecution, 400000);
   assert.equal(readiness.readyToConfirm, true);
 }
 
