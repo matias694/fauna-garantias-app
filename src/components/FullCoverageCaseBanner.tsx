@@ -85,7 +85,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <div>
               <h3 className="font-extrabold text-sm">Cómo se cubre esta salida</h3>
               <p className="text-[11px] text-emerald-200">
-                La garantía se usa primero en daños; {isFull ? 'Plan Full cubre el daño restante según el plan. ' : ''}El abono proporcional se reserva primero para gastos comunes y servicios, y solo su excedente compensa otras obligaciones.
+                Resumen de fondos aplicados y saldos pendientes antes de confirmar la liquidación.
               </p>
             </div>
           </div>
@@ -171,23 +171,6 @@ export const FullCoverageCaseBanner: React.FC = () => {
             </div>
           )}
         </div>
-
-        {fin.tenantCredits > 0 && (
-          <p className="text-[11px] text-emerald-100">
-            Del abono recibido, <strong>{formatCLP(fin.creditsForServices)}</strong> se imputan primero a GC/servicios.
-            {fin.creditsForDamage > 0 && <> Luego <strong>{formatCLP(fin.creditsForDamage)}</strong> del excedente compensan una diferencia de reparaciones.</>}
-            {fin.creditsForFaunaRecovery > 0 && <> Además, <strong>{formatCLP(fin.creditsForFaunaRecovery)}</strong> del excedente recuperan inmediatamente parte del financiamiento Fauna.</>}
-          </p>
-        )}
-
-        {isFull && fin.fullCoverageApplied > 0 && (
-          <p className="text-[11px] text-emerald-100">
-            Plan Full aplica un beneficio de <strong>{formatCLP(fin.fullCoverageApplied)}</strong> sobre daños, de un máximo de {formatCLP(fin.fullCoverageLimit)}.
-            {fin.creditsForFaunaRecovery > 0
-              ? <> Tras compensar el excedente del abono, el financiamiento neto que Fauna debe sostener es <strong>{formatCLP(fin.faunaFinancingRequired)}</strong>.</>
-              : ' El abono proporcional de servicios no reduce este beneficio.'}
-          </p>
-        )}
 
         {!isConfirmed && damagePending > 0 && (
           <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
