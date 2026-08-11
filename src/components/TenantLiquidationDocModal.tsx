@@ -3,8 +3,9 @@ import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
 import { formatCLP, formatDate } from '../utils/formatters';
 import { calculateGuaranteeFinances } from '../utils/calculations';
+import { downloadTenantLiquidationPdf } from '../utils/liquidationPdf';
 import { FaunaIsotipo } from './FaunaBrand';
-import { X, Printer, FileText } from 'lucide-react';
+import { X, Download, FileText } from 'lucide-react';
 
 interface TenantLiquidationDocModalProps {
   isOpen?: boolean;
@@ -24,7 +25,7 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const todayStr = formatDate(new Date().toISOString().split('T')[0]);
 
-  const handlePrint = () => window.print();
+  const handleDownload = () => downloadTenantLiquidationPdf(guaranteeCase, settings);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -35,8 +36,8 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
             <h3 className="font-bold text-sm">Vista Previa: Liquidación de Garantía - Arrendatario</h3>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handlePrint} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs">
-              <Printer className="w-4 h-4" /> Imprimir / Guardar PDF
+            <button onClick={handleDownload} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs">
+              <Download className="w-4 h-4" /> Descargar PDF
             </button>
             <button onClick={onClose} className="p-1 text-slate-300 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
           </div>
