@@ -6,11 +6,10 @@ import { Banknote, CheckCircle2, Clock3, ShieldCheck, WalletCards } from 'lucide
 
 /**
  * Resumen operativo para garantías insuficientes.
- * - Una diferencia en reparaciones debe resolverse antes de confirmar.
- * - GC/servicios pendientes del propietario no bloquean la liquidación, pero sí
- *   permanecen como obligación vigente hasta quedar cubiertos.
- * - Los abonos del arrendatario son fondos generales y se aplican según la prioridad
- *   financiera del caso, sin quedar amarrados al concepto usado como referencia.
+ * - Garantía primero a daños.
+ * - Plan Full, cuando corresponde, protege al propietario sobre el daño restante.
+ * - El abono proporcional del arrendatario se imputa primero a GC/servicios.
+ * - Solo su excedente puede compensar obligaciones de daño y el saldo final.
  */
 export const FullCoverageCaseBanner: React.FC = () => {
   const {
@@ -86,7 +85,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <div>
               <h3 className="font-extrabold text-sm">Cómo se cubre esta salida</h3>
               <p className="text-[11px] text-emerald-200">
-                Garantía y abonos del arrendatario son fondos disponibles; {isFull ? 'Plan Full cubre solo el daño que siga descubierto. ' : ''}Después se determina cualquier saldo del propietario.
+                La garantía se usa primero en daños; {isFull ? 'Plan Full cubre el daño restante según el plan. ' : ''}El abono proporcional se reserva primero para gastos comunes y servicios, y solo su excedente compensa otras obligaciones.
               </p>
             </div>
           </div>
@@ -111,11 +110,11 @@ export const FullCoverageCaseBanner: React.FC = () => {
                 {fin.guaranteeForDamage > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">Garantía <strong>{formatCLP(fin.guaranteeForDamage)}</strong></span>
                 )}
-                {fin.creditsForDamage > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abonos arrendatario <strong>{formatCLP(fin.creditsForDamage)}</strong></span>
-                )}
                 {isFull && fin.fullCoverageApplied > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/40 border border-emerald-500/30">Plan Full <strong>{formatCLP(fin.fullCoverageApplied)}</strong></span>
+                )}
+                {fin.creditsForDamage > 0 && (
+                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Excedente abono <strong>{formatCLP(fin.creditsForDamage)}</strong></span>
                 )}
                 {ownerProvisionForDamage > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">Propietario <strong>{formatCLP(ownerProvisionForDamage)}</strong></span>
@@ -149,7 +148,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
                   <span className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-200">Sin garantía disponible</span>
                 )}
                 {fin.creditsForServices > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abonos arrendatario <strong>{formatCLP(fin.creditsForServices)}</strong></span>
+                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abono proporcional <strong>{formatCLP(fin.creditsForServices)}</strong></span>
                 )}
                 {ownerProvisionForServices > 0 && (
                   <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">Pagado por propietario <strong>{formatCLP(ownerProvisionForServices)}</strong></span>
@@ -173,9 +172,20 @@ export const FullCoverageCaseBanner: React.FC = () => {
           )}
         </div>
 
+        {fin.tenantCredits > 0 && (
+          <p className="text-[11px] text-emerald-100">
+            Del abono recibido, <strong>{formatCLP(fin.creditsForServices)}</strong> se imputan primero a GC/servicios.
+            {fin.creditsForDamage > 0 && <> Luego <strong>{formatCLP(fin.creditsForDamage)}</strong> del excedente compensan una diferencia de reparaciones.</>}
+            {fin.creditsForFaunaRecovery > 0 && <> Además, <strong>{formatCLP(fin.creditsForFaunaRecovery)}</strong> del excedente recuperan inmediatamente parte del financiamiento Fauna.</>}
+          </p>
+        )}
+
         {isFull && fin.fullCoverageApplied > 0 && (
           <p className="text-[11px] text-emerald-100">
-            Plan Full está usando <strong>{formatCLP(fin.fullCoverageApplied)}</strong> de un máximo disponible de {formatCLP(fin.fullCoverageLimit)}. La cobertura se ajusta al daño que siga descubierto después de los fondos disponibles del arrendatario.
+            Plan Full aplica un beneficio de <strong>{formatCLP(fin.fullCoverageApplied)}</strong> sobre daños, de un máximo de {formatCLP(fin.fullCoverageLimit)}.
+            {fin.creditsForFaunaRecovery > 0
+              ? <> Tras compensar el excedente del abono, el financiamiento neto que Fauna debe sostener es <strong>{formatCLP(fin.faunaFinancingRequired)}</strong>.</>
+              : ' El abono proporcional de servicios no reduce este beneficio.'}
           </p>
         )}
 
