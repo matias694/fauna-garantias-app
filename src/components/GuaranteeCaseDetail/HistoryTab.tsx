@@ -96,7 +96,6 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
   };
 
   const normalizeAuditLog = (log: AuditLog): HistoryEvent | null => {
-    // Persistencia técnica y estados derivados no deben ocupar espacio en la bitácora visible.
     if (log.action === 'Actualización de Caso') return null;
     if (log.action === 'Seguimiento Registrado') return null;
     if (log.action === 'Preparación Actualizada') return null;
@@ -199,10 +198,12 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     .filter((event): event is HistoryEvent => Boolean(event));
 
   const followUpEvents: HistoryEvent[] = (guaranteeCase.followUps || []).map(item => {
-    const isNextManagementUpdate = item.comment.startsWith('Próxima gestión actualizada desde Resumen');
+    const sourceComment = item.originalComment || item.comment;
+    const sourceArea = item.originalArea || item.area;
+    const isNextManagementUpdate = sourceComment.startsWith('Próxima gestión actualizada desde Resumen');
     const cleanedComment = isNextManagementUpdate
-      ? item.comment.replace(/^Próxima gestión actualizada desde Resumen:\s*/i, '').trim()
-      : item.comment;
+      ? sourceComment.replace(/^Próxima gestión actualizada desde Resumen:\s*/i, '').trim()
+      : sourceComment;
 
     return {
       id: `HIST-${item.id}`,
@@ -211,7 +212,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
       userEmail: item.userEmail,
       action: isNextManagementUpdate
         ? 'Próxima gestión actualizada'
-        : `Seguimiento · ${item.area === 'Garantia' ? 'Garantía' : item.area === 'Reparacion' ? 'Reparación' : 'General'}`,
+        : `Seguimiento · ${sourceArea === 'Garantia' ? 'Garantía' : sourceArea === 'Reparacion' ? 'Reparación' : 'General'}`,
       detail: formatCLPAmountsInText(cleanedComment),
       sortValue: parseChileTimestamp(item.createdAt)
     };
@@ -220,7 +221,6 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
   const sortedEvents = [...auditEvents, ...followUpEvents].sort((a, b) => b.sortValue - a.sortValue);
 
   const events = sortedEvents.filter((event, index, all) => {
-    // Una reparación recién incorporada ya contiene monto y contexto; se oculta el cargo genérico paralelo.
     if (event.action === 'Cargo agregado') {
       const detailedRepairEvent = all.some(candidate =>
         candidate.id !== event.id &&
