@@ -62,8 +62,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   };
 }
 
-// 1) Caso típico: el abono previo se suma globalmente y reduce el saldo final,
-// aunque se haya registrado solo como referencia de servicios.
+// 1) Caso típico: el proporcional se imputa primero a GC/servicios.
 {
   const c = baseCase({
     charges: [
@@ -93,13 +92,16 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.grossCharges, 640000);
   assert.equal(fin.tenantCredits, 120000);
+  assert.equal(fin.guaranteeForDamage, 400000);
+  assert.equal(fin.guaranteeForServices, 100000);
+  assert.equal(fin.creditsForServices, 120000);
+  assert.equal(fin.ownerServiceObligation, 20000);
   assert.equal(fin.totalCharges, 520000);
   assert.equal(fin.tenantDeficit, 20000);
-  assert.equal(fin.tenantReceivableAmount, 20000);
 }
 
-// 2) El concepto del abono no limita su efecto financiero. Puede existir un abono
-// referenciado como Agua aunque no haya un cargo de Agua y sigue siendo fondo del arrendatario.
+// 2) Si el proporcional excede los servicios, el excedente puede compensar daños.
+// No se devuelve dinero mientras exista otra deuda del arrendatario.
 {
   const c = baseCase({
     guaranteeAmount: 500000,
@@ -109,20 +111,22 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
         date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
       },
       {
-        id: 'ABONO-AGUA', category: 'AGUA', description: 'Abono previo estimado', amount: -300000,
+        id: 'ABONO-AGUA', category: 'AGUA', description: 'Proporcional servicios', amount: -300000,
         date: '01/07/2026', type: 'SERVICIO_CONSUMO', notes: '', documents: [], photos: []
       }
     ]
   });
 
   const fin = calculateGuaranteeFinances(c, settings);
-  assert.equal(fin.tenantCredits, 300000);
+  assert.equal(fin.creditsForServices, 0);
   assert.equal(fin.creditsForDamage, 200000);
   assert.equal(fin.ownerRepairFundingRequired, 0);
+  assert.equal(fin.tenantCreditsUnapplied, 100000);
   assert.equal(fin.refundToTenant, 100000);
 }
 
-// 3) En Full, los abonos disponibles se usan antes de financiar daño con Fauna.
+// 3) En Full, el proporcional cubre primero servicios y NO reduce el beneficio Full.
+// El excedente puede recuperar inmediatamente parte del financiamiento Fauna.
 {
   const c = baseCase({
     plan: 'FULL',
@@ -133,7 +137,11 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
         date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
       },
       {
-        id: 'ABONO', category: 'OTRO', description: 'Abono previo', amount: -100000,
+        id: 'CHG-SERV', category: 'GASTOS_COMUNES', description: 'Servicios', amount: 100000,
+        date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+      },
+      {
+        id: 'ABONO', category: 'OTRO', description: 'Proporcional servicios', amount: -150000,
         date: '01/07/2026', type: 'OTRO', notes: '', documents: [], photos: []
       }
     ]
@@ -141,10 +149,44 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 
   const fin = calculateGuaranteeFinances(c, settings);
   assert.equal(fin.guaranteeForDamage, 400000);
-  assert.equal(fin.creditsForDamage, 100000);
-  assert.equal(fin.fullCoverageApplied, 300000);
-  assert.equal(fin.faunaFinancingRequired, 300000);
-  assert.equal(fin.tenantDeficit, 300000);
+  assert.equal(fin.fullCoverageApplied, 400000);
+  assert.equal(fin.creditsForServices, 100000);
+  assert.equal(fin.creditsForDamage, 0);
+  assert.equal(fin.creditsForFaunaRecovery, 50000);
+  assert.equal(fin.faunaFinancingRequired, 350000);
+  assert.equal(fin.tenantDeficit, 350000);
 }
 
-console.log('✓ Abonos globales validados: 3 escenarios OK');
+// 4) Si después de Full todavía falta para reparaciones, el excedente del proporcional
+// reduce primero el aporte del propietario; la deuda final sigue cuadrando.
+{
+  const c = baseCase({
+    plan: 'FULL',
+    guaranteeAmount: 400000,
+    charges: [
+      {
+        id: 'CHG-DANO', category: 'REPARACIONES', description: 'Daños', amount: 900000,
+        date: '01/07/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+      },
+      {
+        id: 'CHG-SERV', category: 'GASTOS_COMUNES', description: 'Servicios', amount: 100000,
+        date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+      },
+      {
+        id: 'ABONO', category: 'GASTOS_COMUNES', description: 'Proporcional servicios', amount: -150000,
+        date: '01/07/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+      }
+    ]
+  });
+
+  const fin = calculateGuaranteeFinances(c, settings);
+  assert.equal(fin.fullCoverageApplied, 400000);
+  assert.equal(fin.creditsForServices, 100000);
+  assert.equal(fin.creditsForDamage, 50000);
+  assert.equal(fin.ownerRepairFundingRequired, 50000);
+  assert.equal(fin.faunaFinancingRequired, 400000);
+  assert.equal(fin.tenantDeficit, 450000);
+  assert.equal(fin.ownerContributionRequired + fin.faunaFinancingRequired, fin.tenantDeficit);
+}
+
+console.log('✓ Prioridad de abonos en servicios validada: 4 escenarios OK');
