@@ -12,6 +12,7 @@ import { LegacyReceivableReconciler } from './components/LegacyReceivableReconci
 import { CompletedCaseSync } from './components/CompletedCaseSync';
 import { ExactBalanceDemoSeeder } from './components/ExactBalanceDemoSeeder';
 import { FullCoverageDemoSeeder } from './components/FullCoverageDemoSeeder';
+import { FullOwnerRecoveryDemoSeeder } from './components/FullOwnerRecoveryDemoSeeder';
 import { FullCoverageSync } from './components/FullCoverageSync';
 import { FundingRequirementsSync } from './components/FundingRequirementsSync';
 
@@ -52,6 +53,7 @@ export default function App() {
       <CompletedCaseSync />
       <ExactBalanceDemoSeeder />
       <FullCoverageDemoSeeder />
+      <FullOwnerRecoveryDemoSeeder />
       <MainContent />
     </AppProvider>
   );
