@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { GuaranteeCase, SystemSettings } from '../types';
 import { calculateGuaranteeFinances } from '../utils/calculations';
+import { isCaseCompleted } from '../context/AppContext';
 
 const settings = {
   maxLiquidationDays: 60,
@@ -105,4 +106,35 @@ assert.equal(otherFin.damageCharges, 0);
 assert.equal(otherFin.serviceCharges, 600000);
 assert.equal(otherFin.fullCoverageApplied, 0);
 
-console.log('✓ Reglas de hardening para reparaciones canceladas y cargos Otro validadas');
+// Un saldo de servicios del propietario puede cerrarse operacionalmente solo si existe un diferimiento explícito.
+const ownerServicesPending: GuaranteeCase = {
+  ...base,
+  plan: 'ESTANDAR',
+  liquidationStatus: 'EMITIDA',
+  guaranteeAmount: 400000,
+  receivableStatus: 'INCOBRABLE',
+  charges: [
+    {
+      id: 'CHG-DANO-CUBIERTO', category: 'REPARACIONES', description: 'Daño cubierto', amount: 400000,
+      date: '11/08/2026', type: 'DAÑO_REPARACION', notes: '', documents: [], photos: []
+    },
+    {
+      id: 'CHG-SERVICIO-PENDIENTE', category: 'GASTOS_COMUNES', description: 'GC final', amount: 200000,
+      date: '11/08/2026', type: 'GASTO_COMUN', notes: '', documents: [], photos: []
+    }
+  ]
+};
+assert.equal(isCaseCompleted(ownerServicesPending, settings), false);
+assert.equal(isCaseCompleted({
+  ...ownerServicesPending,
+  ownerServiceDeferral: {
+    amountAtDeferral: 200000,
+    reason: 'Propietario pagará al ingresar un nuevo arrendatario',
+    nextReviewDate: '15/09/2026',
+    responsible: 'Usuario',
+    createdAt: '2026-08-11T23:00:00.000Z',
+    createdBy: 'ADMINISTRADOR'
+  }
+}, settings), true);
+
+console.log('✓ Reglas de hardening, cargos y diferimiento de pendientes propietario validadas');

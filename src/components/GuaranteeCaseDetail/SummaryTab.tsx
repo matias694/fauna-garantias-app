@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase } from '../../types';
 import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput, addDaysToDate } from '../../utils/formatters';
-import { calculateGuaranteeFinances } from '../../utils/calculations';
+import { calculateFundingReadiness, calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Edit3 } from 'lucide-react';
 
@@ -27,6 +27,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   }, [guaranteeCase.id, guaranteeCase.nextManagement, guaranteeCase.nextManagementDate, guaranteeCase.nextManagementResponsible, guaranteeCase.responsible, guaranteeCase.isCompleted, guaranteeCase.isClosed]);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
+  const readiness = calculateFundingReadiness(guaranteeCase, settings);
   const receivable = receivables.find(r => r.caseId === guaranteeCase.id);
   const settlement = getSettlementState(guaranteeCase, receivable, settings);
   const daysInProcess = calculateDaysDifference(guaranteeCase.receptionDate);
@@ -194,7 +195,14 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <span className="text-[9px] uppercase font-bold text-slate-400 block">Caso cerrado</span>
-              <strong className="text-sm text-slate-800">Sin gestiones pendientes</strong>
+              {readiness.ownerServicePending > 0 && guaranteeCase.ownerServiceDeferral ? (
+                <>
+                  <strong className="text-sm text-sky-800">Pendiente propietario diferido: {formatCLP(readiness.ownerServicePending)}</strong>
+                  <span className="text-[10px] text-slate-500 block">Revisar {formatDate(guaranteeCase.ownerServiceDeferral.nextReviewDate)} · {guaranteeCase.ownerServiceDeferral.responsible}</span>
+                </>
+              ) : (
+                <strong className="text-sm text-slate-800">Sin gestiones pendientes</strong>
+              )}
             </div>
             <span className="text-[11px] text-slate-500">{formatClosedAt(guaranteeCase.closedAt)} · {guaranteeCase.closedBy || 'Sin responsable'}</span>
           </div>

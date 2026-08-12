@@ -77,7 +77,7 @@ export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = ini
   }
 
   const readiness = calculateFundingReadiness(c, settings);
-  if (readiness.ownerServicePending > 0) return false;
+  if (readiness.ownerServicePending > 0 && !c.ownerServiceDeferral) return false;
 
   return true;
 }
@@ -810,7 +810,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (targetCase.liquidationStatus !== 'EMITIDA') pending.push('liquidación emitida');
       if (targetCase.refund && targetCase.refund.amount > 0 && targetCase.refund.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
       if (targetCase.receivableStatus && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
-      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0) pending.push('gastos comunes/servicios pendientes del propietario');
+      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');
       return { success: false, message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.` };
     }
 

@@ -142,6 +142,15 @@ export interface Charge {
 export type OwnerPaymentPurpose = 'REPARACIONES' | 'SERVICIOS';
 export type OwnerPaymentMode = 'TRANSFERIDO_FAUNA' | 'PAGADO_DIRECTO';
 
+export interface OwnerServiceDeferral {
+  amountAtDeferral: number;
+  reason: string;
+  nextReviewDate: string;
+  responsible: string;
+  createdAt: string;
+  createdBy: string;
+}
+
 export type FinancialMovementType =
   | 'GARANTIA'
   | 'CARGO'
@@ -316,6 +325,7 @@ export interface GuaranteeCase {
   ownerContribution: number;
   fullCoverageApplied: number;
   faunaFinancing: number;
+  ownerServiceDeferral?: OwnerServiceDeferral;
 
   isCompleted?: boolean;
   isClosed?: boolean;

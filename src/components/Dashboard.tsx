@@ -86,16 +86,19 @@ export const Dashboard: React.FC = () => {
   const faunaFinancingToRecover = openCases.reduce((sum, c) => sum + Math.max(0, c.faunaFinancing || 0), 0);
 
   const fundingByCase = new Map<string, ReturnType<typeof calculateFundingReadiness>>(
-    openCases.map(c => [c.id, calculateFundingReadiness(c, settings)] as const)
+    cases.map(c => [c.id, calculateFundingReadiness(c, settings)] as const)
   );
   const ownerRepairFundingPending = openCases.reduce(
     (sum, c) => sum + (fundingByCase.get(c.id)?.ownerRepairPendingProvision || 0),
     0
   );
-  const ownerServicePending = openCases.reduce(
+  const ownerServicePending = cases.reduce(
     (sum, c) => sum + (fundingByCase.get(c.id)?.ownerServicePending || 0),
     0
   );
+  const ownerServiceDeferredCount = cases.filter(c =>
+    Boolean(c.ownerServiceDeferral) && (fundingByCase.get(c.id)?.ownerServicePending || 0) > 0
+  ).length;
 
   let faunaRecoveredThisMonth = 0;
   const currentMonth = new Date().getMonth();
@@ -390,7 +393,7 @@ export const Dashboard: React.FC = () => {
               <strong className="text-sm font-black text-amber-900 font-mono">{formatCLP(ownerRepairFundingPending)}</strong>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div><span className="text-[10px] font-extrabold text-slate-600 uppercase block">Servicios pendientes del propietario</span><span className="text-[11px] text-slate-500">No bloquean la liquidación</span></div>
+              <div><span className="text-[10px] font-extrabold text-slate-600 uppercase block">Servicios pendientes del propietario</span><span className="text-[11px] text-slate-500">No bloquean la liquidación{ownerServiceDeferredCount > 0 ? ` · ${ownerServiceDeferredCount} diferido${ownerServiceDeferredCount > 1 ? 's' : ''}` : ''}</span></div>
               <strong className="text-sm font-black text-slate-900 font-mono">{formatCLP(ownerServicePending)}</strong>
             </div>
             <div className="p-3 bg-slate-100/90 rounded-xl border border-slate-200 flex items-center justify-between">
