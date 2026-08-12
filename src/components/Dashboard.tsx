@@ -92,12 +92,16 @@ export const Dashboard: React.FC = () => {
     (sum, c) => sum + (fundingByCase.get(c.id)?.ownerRepairPendingProvision || 0),
     0
   );
-  const ownerServicePending = cases.reduce(
+  const ownerServicePendingOpen = openCases.reduce(
     (sum, c) => sum + (fundingByCase.get(c.id)?.ownerServicePending || 0),
     0
   );
-  const ownerServiceDeferredCount = cases.filter(c =>
-    Boolean(c.ownerServiceDeferral) && (fundingByCase.get(c.id)?.ownerServicePending || 0) > 0
+  const ownerPostClosePending = cases
+    .filter(c => c.isClosed && Boolean(c.ownerPostClosePending))
+    .reduce((sum, c) => sum + (fundingByCase.get(c.id)?.ownerServicePending || 0), 0);
+  const ownerServicePending = ownerServicePendingOpen + ownerPostClosePending;
+  const ownerPostClosePendingCount = cases.filter(c =>
+    c.isClosed && Boolean(c.ownerPostClosePending) && (fundingByCase.get(c.id)?.ownerServicePending || 0) > 0
   ).length;
 
   let faunaRecoveredThisMonth = 0;
@@ -393,7 +397,7 @@ export const Dashboard: React.FC = () => {
               <strong className="text-sm font-black text-amber-900 font-mono">{formatCLP(ownerRepairFundingPending)}</strong>
             </div>
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div><span className="text-[10px] font-extrabold text-slate-600 uppercase block">Servicios pendientes del propietario</span><span className="text-[11px] text-slate-500">No bloquean la liquidación{ownerServiceDeferredCount > 0 ? ` · ${ownerServiceDeferredCount} diferido${ownerServiceDeferredCount > 1 ? 's' : ''}` : ''}</span></div>
+              <div><span className="text-[10px] font-extrabold text-slate-600 uppercase block">Servicios pendientes del propietario</span><span className="text-[11px] text-slate-500">{ownerPostClosePendingCount > 0 ? `${formatCLP(ownerPostClosePending)} en seguimiento posterior · ${ownerPostClosePendingCount} caso${ownerPostClosePendingCount > 1 ? 's' : ''}` : 'No bloquean la liquidación'}</span></div>
               <strong className="text-sm font-black text-slate-900 font-mono">{formatCLP(ownerServicePending)}</strong>
             </div>
             <div className="p-3 bg-slate-100/90 rounded-xl border border-slate-200 flex items-center justify-between">

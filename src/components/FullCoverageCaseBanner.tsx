@@ -56,7 +56,8 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const ownerProvisionForServices = readiness.ownerServiceFundedTotal;
   const damagePending = readiness.ownerRepairPendingProvision;
   const servicesPending = readiness.ownerServicePending;
-  const activeServiceDeferral = servicesPending > 0 ? guaranteeCase.ownerServiceDeferral : undefined;
+  const activeServiceDeferral = servicesPending > 0 && !guaranteeCase.isClosed ? guaranteeCase.ownerServiceDeferral : undefined;
+  const postClosePending = servicesPending > 0 && guaranteeCase.isClosed ? guaranteeCase.ownerPostClosePending : undefined;
   const selectedPending = paymentPurpose === 'REPARACIONES' ? damagePending : servicesPending;
 
   const openOwnerPayment = (purpose: OwnerPaymentPurpose) => {
@@ -98,10 +99,36 @@ export const FullCoverageCaseBanner: React.FC = () => {
       : 'Pagado directamente por el propietario';
     const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 
+    const resolvesPostClosePending = Boolean(
+      guaranteeCase.isClosed
+      && guaranteeCase.ownerPostClosePending
+      && paymentPurpose === 'SERVICIOS'
+      && paymentAmount >= pending
+    );
+
     updateGuaranteeCase(guaranteeCase.id, {
       // Este saldo representa lo efectivamente asumido por el propietario y todavía no recuperado.
-      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount
+      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount,
+      ownerPostClosePending: guaranteeCase.ownerPostClosePending
+        ? {
+            ...guaranteeCase.ownerPostClosePending,
+            status: resolvesPostClosePending ? 'RESUELTO' : guaranteeCase.ownerPostClosePending.status,
+            resolvedAt: resolvesPostClosePending ? new Date().toISOString() : guaranteeCase.ownerPostClosePending.resolvedAt,
+            resolvedBy: resolvesPostClosePending ? userRole : guaranteeCase.ownerPostClosePending.resolvedBy,
+            resolutionNote: resolvesPostClosePending
+              ? `Pendiente cubierto mediante pago del propietario (${paymentMode === 'TRANSFERIDO_FAUNA' ? 'transferido a Fauna' : 'pago directo'}).`
+              : guaranteeCase.ownerPostClosePending.resolutionNote
+          }
+        : undefined
     });
+
+    if (resolvesPostClosePending) {
+      logAudit(
+        guaranteeCase.id,
+        'Seguimiento posterior resuelto',
+        `Pendiente del propietario por ${formatCLP(pending)} resuelto mediante pago registrado`
+      );
+    }
 
     addFinancialMovement(guaranteeCase.id, {
       date: formatDate(paymentDate),
@@ -129,7 +156,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
   };
 
   const openServiceDeferral = () => {
-    if (!isConfirmed || servicesPending <= 0) return;
+    if (!isConfirmed || guaranteeCase.isClosed || servicesPending <= 0) return;
     setDeferralReason(guaranteeCase.ownerServiceDeferral?.reason || '');
     setDeferralDate(guaranteeCase.ownerServiceDeferral?.nextReviewDate || '');
     setDeferralResponsible(guaranteeCase.ownerServiceDeferral?.responsible || guaranteeCase.responsible || '');
@@ -139,7 +166,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
   const registerServiceDeferral = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!isConfirmed || servicesPending <= 0) return;
+    if (!isConfirmed || guaranteeCase.isClosed || servicesPending <= 0) return;
     if (!deferralReason.trim() || !deferralDate || !deferralResponsible) {
       setDeferralError('Indica el acuerdo/motivo, la próxima fecha de revisión y el responsable.');
       return;
@@ -282,7 +309,12 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <Clock3 className="w-4 h-4 shrink-0 mt-0.5 text-sky-200" />
               <div className="min-w-0">
                 <strong className="block text-xs">Quedan {formatCLP(servicesPending)} pendientes del propietario en gastos comunes y/o servicios.</strong>
-                {activeServiceDeferral ? (
+                {postClosePending ? (
+                  <>
+                    <span className="block mt-0.5 font-semibold text-sky-100">Seguimiento posterior: {postClosePending.reason}</span>
+                    <span className="block mt-0.5 text-sky-200">Revisar {formatDate(postClosePending.nextReviewDate)} · {postClosePending.responsible}</span>
+                  </>
+                ) : activeServiceDeferral ? (
                   <>
                     <span className="block mt-0.5 font-semibold text-sky-100">Pendiente diferido: {activeServiceDeferral.reason}</span>
                     <span className="block mt-0.5 text-sky-200">Revisar {formatDate(activeServiceDeferral.nextReviewDate)} · {activeServiceDeferral.responsible}</span>
@@ -296,7 +328,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <button type="button" onClick={() => openOwnerPayment('SERVICIOS')} className="px-3.5 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
                 <Banknote className="w-4 h-4" /> Registrar pago
               </button>
-              {isConfirmed && (
+              {isConfirmed && !guaranteeCase.isClosed && (
                 <button type="button" onClick={openServiceDeferral} className="px-3.5 py-2 rounded-xl bg-sky-100/10 border border-sky-200/40 text-white hover:bg-sky-100/20 text-xs font-extrabold cursor-pointer">
                   {activeServiceDeferral ? 'Editar pendiente' : 'Dejar pendiente'}
                 </button>

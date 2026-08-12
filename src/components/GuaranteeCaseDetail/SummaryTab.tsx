@@ -195,13 +195,13 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <span className="text-[9px] uppercase font-bold text-slate-400 block">Caso cerrado</span>
-              {readiness.ownerServicePending > 0 && guaranteeCase.ownerServiceDeferral ? (
+              {readiness.ownerServicePending > 0 && guaranteeCase.ownerPostClosePending ? (
                 <>
-                  <strong className="text-sm text-sky-800">Pendiente propietario diferido: {formatCLP(readiness.ownerServicePending)}</strong>
-                  <span className="text-[10px] text-slate-500 block">Revisar {formatDate(guaranteeCase.ownerServiceDeferral.nextReviewDate)} · {guaranteeCase.ownerServiceDeferral.responsible}</span>
+                  <strong className="text-sm text-sky-800">Garantía cerrada · seguimiento posterior propietario {formatCLP(readiness.ownerServicePending)}</strong>
+                  <span className="text-[10px] text-slate-500 block">No bloquea el contrato · revisar {formatDate(guaranteeCase.ownerPostClosePending.nextReviewDate)} · {guaranteeCase.ownerPostClosePending.responsible}</span>
                 </>
               ) : (
-                <strong className="text-sm text-slate-800">Sin gestiones pendientes</strong>
+                <strong className="text-sm text-slate-800">Sin gestiones pendientes de garantía</strong>
               )}
             </div>
             <span className="text-[11px] text-slate-500">{formatClosedAt(guaranteeCase.closedAt)} · {guaranteeCase.closedBy || 'Sin responsable'}</span>
