@@ -151,6 +151,19 @@ export interface OwnerServiceDeferral {
   createdBy: string;
 }
 
+export interface OwnerPostClosePending {
+  amountAtTransfer: number;
+  reason: string;
+  nextReviewDate: string;
+  responsible: string;
+  transferredAt: string;
+  transferredBy: string;
+  status: 'PENDIENTE' | 'RESUELTO';
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionNote?: string;
+}
+
 export type FinancialMovementType =
   | 'GARANTIA'
   | 'CARGO'
@@ -326,6 +339,7 @@ export interface GuaranteeCase {
   fullCoverageApplied: number;
   faunaFinancing: number;
   ownerServiceDeferral?: OwnerServiceDeferral;
+  ownerPostClosePending?: OwnerPostClosePending;
 
   isCompleted?: boolean;
   isClosed?: boolean;

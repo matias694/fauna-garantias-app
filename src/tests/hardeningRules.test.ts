@@ -137,4 +137,18 @@ assert.equal(isCaseCompleted({
   }
 }, settings), true);
 
-console.log('✓ Reglas de hardening, cargos y diferimiento de pendientes propietario validadas');
+assert.equal(isCaseCompleted({
+  ...ownerServicesPending,
+  isClosed: true,
+  ownerPostClosePending: {
+    amountAtTransfer: 200000,
+    reason: 'Propietario pagará al ingresar un nuevo arrendatario',
+    nextReviewDate: '15/09/2026',
+    responsible: 'Usuario',
+    transferredAt: '2026-08-12T03:00:00.000Z',
+    transferredBy: 'ADMINISTRADOR',
+    status: 'PENDIENTE'
+  }
+}, settings), true);
+
+console.log('✓ Reglas de hardening, cargos, diferimiento y seguimiento posterior propietario validadas');

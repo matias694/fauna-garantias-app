@@ -222,7 +222,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                         {c.isClosed && <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 font-bold text-[9px] rounded uppercase border border-slate-300">Cerrado</span>}
                         {readiness.ownerServicePending > 0 && (
                           <span className="px-1.5 py-0.2 bg-sky-50 text-sky-800 font-bold text-[9px] rounded border border-sky-200">
-                            {c.ownerServiceDeferral ? 'Diferido' : 'Pendiente prop.'} {formatCLP(readiness.ownerServicePending)}
+                            {c.ownerPostClosePending ? 'Seguimiento posterior' : c.ownerServiceDeferral ? 'Diferido' : 'Pendiente prop.'} {formatCLP(readiness.ownerServicePending)}
                           </span>
                         )}
                       </div>
@@ -266,11 +266,23 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                     <td className="p-3.5 max-w-xs">
                       {c.isClosed ? (
                         <div className="space-y-1">
-                          <span className="text-emerald-800 font-bold text-xs block">Caso cerrado</span>
-                          <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5">
-                            <UserCheck className="w-3 h-3 text-[#2D8B73]" />
-                            {c.closedBy || c.responsible}
-                          </span>
+                          {readiness.ownerServicePending > 0 && c.ownerPostClosePending ? (
+                            <>
+                              <span className="text-sky-800 font-bold text-xs block">Seguimiento posterior propietario</span>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200">{formatShortDateStr(c.ownerPostClosePending.nextReviewDate)}</span>
+                                <span className="text-[10px] text-slate-500 font-medium inline-flex items-center gap-0.5"><UserCheck className="w-3 h-3 text-[#2D8B73]" />{c.ownerPostClosePending.responsible}</span>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-emerald-800 font-bold text-xs block">Caso cerrado</span>
+                              <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5">
+                                <UserCheck className="w-3 h-3 text-[#2D8B73]" />
+                                {c.closedBy || c.responsible}
+                              </span>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <div className="space-y-1">

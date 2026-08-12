@@ -77,7 +77,7 @@ export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = ini
   }
 
   const readiness = calculateFundingReadiness(c, settings);
-  if (readiness.ownerServicePending > 0 && !c.ownerServiceDeferral) return false;
+  if (readiness.ownerServicePending > 0 && !c.ownerServiceDeferral && !c.ownerPostClosePending) return false;
 
   return true;
 }
@@ -810,19 +810,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (targetCase.liquidationStatus !== 'EMITIDA') pending.push('liquidación emitida');
       if (targetCase.refund && targetCase.refund.amount > 0 && targetCase.refund.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
       if (targetCase.receivableStatus && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
-      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');
+      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral && !targetCase.ownerPostClosePending) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');
       return { success: false, message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.` };
     }
+
+    const readinessAtClose = calculateFundingReadiness(targetCase, settings);
+    const pendingToTransfer = readinessAtClose.ownerServicePending;
+    const existingPostClosePending = targetCase.ownerPostClosePending;
+    const postClosePending = pendingToTransfer > 0 && targetCase.ownerServiceDeferral
+      ? {
+          amountAtTransfer: existingPostClosePending?.amountAtTransfer || pendingToTransfer,
+          reason: targetCase.ownerServiceDeferral.reason,
+          nextReviewDate: targetCase.ownerServiceDeferral.nextReviewDate,
+          responsible: targetCase.ownerServiceDeferral.responsible,
+          transferredAt: existingPostClosePending?.transferredAt || new Date().toISOString(),
+          transferredBy: existingPostClosePending?.transferredBy || userRole,
+          status: 'PENDIENTE' as const
+        }
+      : existingPostClosePending;
 
     setCases(prev => prev.map(c => c.id === caseId ? {
       ...c,
       isClosed: true,
       closedAt: new Date().toLocaleString('es-CL'),
       closedBy: userRole,
-      isCompleted: true
+      isCompleted: true,
+      ownerPostClosePending: postClosePending,
+      ownerServiceDeferral: postClosePending ? undefined : c.ownerServiceDeferral,
+      nextManagement: '',
+      nextManagementDate: '',
+      nextManagementResponsible: ''
     } : c));
+
+    if (postClosePending && pendingToTransfer > 0) {
+      logAudit(
+        caseId,
+        'Pendiente propietario traspasado',
+        `${formatDate(postClosePending.nextReviewDate)} · ${postClosePending.responsible} · saldo ${pendingToTransfer} trasladado a seguimiento posterior para permitir cierre de garantía/contrato`
+      );
+    }
     logAudit(caseId, 'Cierre de Caso', `Caso ${caseId} cerrado por ${userRole}`);
-    return { success: true, message: 'Caso cerrado con éxito.' };
+    return {
+      success: true,
+      message: postClosePending && pendingToTransfer > 0
+        ? 'Garantía cerrada. El pendiente del propietario quedó traspasado a seguimiento posterior.'
+        : 'Caso cerrado con éxito.'
+    };
   };
 
   const reopenGuaranteeCase = (caseId: string) => {
