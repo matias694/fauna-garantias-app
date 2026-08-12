@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatCLP } from '../utils/formatters';
-import { calculateGuaranteeFinances } from '../utils/calculations';
+import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
 import { getSettlementState } from '../utils/settlementState';
 import { Search, Plus, ChevronRight, UserCheck } from 'lucide-react';
 
@@ -23,6 +23,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
   const filteredCases = cases.filter(c => {
     if (filterCaseStatus === 'OPEN' && c.isClosed) return false;
     if (filterCaseStatus === 'CLOSED' && !c.isClosed) return false;
+    if (filterCaseStatus === 'OWNER_PENDING' && calculateFundingReadiness(c, settings).ownerServicePending <= 0) return false;
 
     const term = searchTerm.toLowerCase();
     const matchSearch =
@@ -129,6 +130,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
               <option value="ALL">Todos los Casos</option>
               <option value="OPEN">🟢 Abiertos</option>
               <option value="CLOSED">🔒 Cerrados</option>
+              <option value="OWNER_PENDING">Pendiente propietario</option>
             </select>
           </div>
 
@@ -203,6 +205,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                 const fin = calculateGuaranteeFinances(c, settings);
                 const receivable = receivables.find(r => r.caseId === c.id);
                 const settlement = getSettlementState(c, receivable, settings);
+                const readiness = calculateFundingReadiness(c, settings);
                 const overdueMgmt = !c.isClosed && Boolean(c.nextManagementDate) && isOverdue(c.nextManagementDate);
                 const formattedDate = formatShortDateStr(c.nextManagementDate);
                 const liquidationLabel = c.liquidationStatus === 'EN_PREPARACION'
@@ -214,9 +217,14 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                 return (
                   <tr key={c.id} className={`hover:bg-slate-50/80 transition-colors ${c.isClosed ? 'bg-slate-50/60' : ''}`}>
                     <td className="p-3.5">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <strong className="text-[#1E382B] font-extrabold">{c.id}</strong>
                         {c.isClosed && <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 font-bold text-[9px] rounded uppercase border border-slate-300">Cerrado</span>}
+                        {readiness.ownerServicePending > 0 && (
+                          <span className="px-1.5 py-0.2 bg-sky-50 text-sky-800 font-bold text-[9px] rounded border border-sky-200">
+                            {c.ownerServiceDeferral ? 'Diferido' : 'Pendiente prop.'} {formatCLP(readiness.ownerServicePending)}
+                          </span>
+                        )}
                       </div>
                       <span className="text-slate-800 font-semibold block text-[11px] mt-0.5">{c.propertyAddress}, {c.propertyUnit}</span>
                     </td>

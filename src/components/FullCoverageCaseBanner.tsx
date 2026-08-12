@@ -22,7 +22,8 @@ export const FullCoverageCaseBanner: React.FC = () => {
     settings,
     userRole,
     updateGuaranteeCase,
-    addFinancialMovement
+    addFinancialMovement,
+    logAudit
   } = useApp();
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -33,6 +34,11 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const [deferralModalOpen, setDeferralModalOpen] = useState(false);
+  const [deferralReason, setDeferralReason] = useState('');
+  const [deferralDate, setDeferralDate] = useState('');
+  const [deferralResponsible, setDeferralResponsible] = useState('');
+  const [deferralError, setDeferralError] = useState('');
 
   if (activeView !== 'case-detail' || !selectedCaseId) return null;
 
@@ -50,6 +56,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const ownerProvisionForServices = readiness.ownerServiceFundedTotal;
   const damagePending = readiness.ownerRepairPendingProvision;
   const servicesPending = readiness.ownerServicePending;
+  const activeServiceDeferral = servicesPending > 0 ? guaranteeCase.ownerServiceDeferral : undefined;
   const selectedPending = paymentPurpose === 'REPARACIONES' ? damagePending : servicesPending;
 
   const openOwnerPayment = (purpose: OwnerPaymentPurpose) => {
@@ -119,6 +126,45 @@ export const FullCoverageCaseBanner: React.FC = () => {
     });
 
     setPaymentModalOpen(false);
+  };
+
+  const openServiceDeferral = () => {
+    if (!isConfirmed || servicesPending <= 0) return;
+    setDeferralReason(guaranteeCase.ownerServiceDeferral?.reason || '');
+    setDeferralDate(guaranteeCase.ownerServiceDeferral?.nextReviewDate || '');
+    setDeferralResponsible(guaranteeCase.ownerServiceDeferral?.responsible || guaranteeCase.responsible || '');
+    setDeferralError('');
+    setDeferralModalOpen(true);
+  };
+
+  const registerServiceDeferral = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!isConfirmed || servicesPending <= 0) return;
+    if (!deferralReason.trim() || !deferralDate || !deferralResponsible) {
+      setDeferralError('Indica el acuerdo/motivo, la próxima fecha de revisión y el responsable.');
+      return;
+    }
+
+    const existing = guaranteeCase.ownerServiceDeferral;
+    updateGuaranteeCase(guaranteeCase.id, {
+      ownerServiceDeferral: {
+        amountAtDeferral: existing?.amountAtDeferral || servicesPending,
+        reason: deferralReason.trim(),
+        nextReviewDate: deferralDate,
+        responsible: deferralResponsible,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        createdBy: existing?.createdBy || userRole
+      },
+      nextManagement: `Revisar pendiente propietario de ${formatCLP(servicesPending)}`,
+      nextManagementDate: deferralDate,
+      nextManagementResponsible: deferralResponsible
+    });
+    logAudit(
+      guaranteeCase.id,
+      existing ? 'Pendiente propietario actualizado' : 'Pendiente propietario diferido',
+      `${formatCLP(servicesPending)} en gastos comunes/servicios · ${deferralReason.trim()} · próxima revisión ${formatDate(deferralDate)} · responsable ${deferralResponsible}`
+    );
+    setDeferralModalOpen(false);
   };
 
   return (
@@ -232,16 +278,30 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
         {servicesPending > 0 && (
           <div className="bg-sky-300/10 border border-sky-300/25 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-[11px] text-sky-50">
-            <div className="flex items-start gap-2.5">
+            <div className="flex items-start gap-2.5 min-w-0">
               <Clock3 className="w-4 h-4 shrink-0 mt-0.5 text-sky-200" />
-              <div>
+              <div className="min-w-0">
                 <strong className="block text-xs">Quedan {formatCLP(servicesPending)} pendientes del propietario en gastos comunes y/o servicios.</strong>
-                <span className="block mt-0.5">Este saldo no bloquea la liquidación. Registra el pago solo cuando el propietario efectivamente lo haya asumido.</span>
+                {activeServiceDeferral ? (
+                  <>
+                    <span className="block mt-0.5 font-semibold text-sky-100">Pendiente diferido: {activeServiceDeferral.reason}</span>
+                    <span className="block mt-0.5 text-sky-200">Revisar {formatDate(activeServiceDeferral.nextReviewDate)} · {activeServiceDeferral.responsible}</span>
+                  </>
+                ) : (
+                  <span className="block mt-0.5">Este saldo no bloquea la liquidación. Después de confirmar puedes registrar el pago o dejar formalmente el pendiente diferido.</span>
+                )}
               </div>
             </div>
-            <button type="button" onClick={() => openOwnerPayment('SERVICIOS')} className="shrink-0 px-3.5 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
-              <Banknote className="w-4 h-4" /> Registrar pago propietario
-            </button>
+            <div className="shrink-0 flex flex-wrap gap-2 justify-end">
+              <button type="button" onClick={() => openOwnerPayment('SERVICIOS')} className="px-3.5 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
+                <Banknote className="w-4 h-4" /> Registrar pago
+              </button>
+              {isConfirmed && (
+                <button type="button" onClick={openServiceDeferral} className="px-3.5 py-2 rounded-xl bg-sky-100/10 border border-sky-200/40 text-white hover:bg-sky-100/20 text-xs font-extrabold cursor-pointer">
+                  {activeServiceDeferral ? 'Editar pendiente' : 'Dejar pendiente'}
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -257,6 +317,49 @@ export const FullCoverageCaseBanner: React.FC = () => {
           </div>
         )}
       </section>
+
+      {deferralModalOpen && (
+        <div className="fixed inset-0 z-[72] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base">Dejar pendiente del propietario</h3>
+                <p className="text-xs text-slate-300 mt-0.5">Gastos comunes/servicios · {formatCLP(servicesPending)}</p>
+              </div>
+              <button type="button" onClick={() => setDeferralModalOpen(false)} className="p-1 text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={registerServiceDeferral} className="p-6 space-y-4 text-xs">
+              <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 text-[11px] text-sky-950">
+                La liquidación puede cerrarse sin registrar un pago ficticio. El saldo seguirá visible como pendiente del propietario hasta que se cubra efectivamente.
+              </div>
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">Acuerdo / motivo *</label>
+                <textarea rows={3} required value={deferralReason} onChange={e => { setDeferralReason(e.target.value); setDeferralError(''); }} placeholder="Ej. Propietario solicita pagarlo cuando ingrese el próximo arrendatario" className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">Próxima revisión *</label>
+                  <input type="date" required value={deferralDate} onChange={e => { setDeferralDate(e.target.value); setDeferralError(''); }} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">Responsable *</label>
+                  <select required value={deferralResponsible} onChange={e => { setDeferralResponsible(e.target.value); setDeferralError(''); }} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5">
+                    <option value="">Seleccionar</option>
+                    {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              </div>
+              {deferralError && <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[11px] font-semibold text-rose-800">{deferralError}</div>}
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                <button type="button" onClick={() => setDeferralModalOpen(false)} className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold cursor-pointer">Cancelar</button>
+                <button type="submit" className="px-5 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold rounded-lg cursor-pointer">Guardar pendiente</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {paymentModalOpen && (
         <div className="fixed inset-0 z-[70] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4">
