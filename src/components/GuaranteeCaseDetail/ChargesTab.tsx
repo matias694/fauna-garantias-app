@@ -246,16 +246,24 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
         || editingCharge.repairTracking?.providerPhone !== repairProviderPhone.trim()
         || editingCharge.repairTracking?.providerEmail !== repairProviderEmail.trim().toLowerCase()
       )) changes.push('contacto del maestro/proveedor actualizado');
+      if (isRepairCharge && (editingCharge.repairTracking?.responsible || '') !== repairResponsible) {
+        changes.push('responsable de reparación actualizado');
+      }
+      if (isRepairCharge && parseFormattedDateToInput(editingCharge.repairTracking?.commitmentDate || '') !== repairCommitmentDate) {
+        changes.push('fecha de compromiso actualizada');
+      }
 
-      updateCharge(guaranteeCase.id, editingCharge.id, nextChargeData);
-      logAudit(
-        guaranteeCase.id,
-        movementKind === 'ABONO' ? 'Abono actualizado' : 'Cargo actualizado',
-        `“${editingCharge.description}”: ${changes.join('; ') || 'movimiento guardado sin cambios visibles'}.`
-      );
-      syncPreparationStatus(guaranteeCase.charges.map(ch =>
-        ch.id === editingCharge.id ? { ...ch, ...nextChargeData } : ch
-      ));
+      if (changes.length > 0) {
+        updateCharge(guaranteeCase.id, editingCharge.id, nextChargeData);
+        logAudit(
+          guaranteeCase.id,
+          movementKind === 'ABONO' ? 'Abono actualizado' : 'Cargo actualizado',
+          `“${editingCharge.description}”: ${changes.join('; ')}.`
+        );
+        syncPreparationStatus(guaranteeCase.charges.map(ch =>
+          ch.id === editingCharge.id ? { ...ch, ...nextChargeData } : ch
+        ));
+      }
     } else {
       addCharge(guaranteeCase.id, nextChargeData);
       const previewCharge: Charge = { id: 'PREVIEW', ...nextChargeData };
@@ -267,9 +275,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
           'Abono incorporado',
           `“${description.trim()}” se registró por ${formatCLP(amount)} como fondo a favor del arrendatario${normalizedCategory !== 'OTRO' ? ` · referencia ${conceptLabel(normalizedCategory)}` : ''}.`
         );
-      }
-
-      if (isRepairCharge) {
+      } else if (isRepairCharge) {
         const tracking = nextChargeData.repairTracking;
         const details = [
           tracking?.provider ? `proveedor ${tracking.provider}` : null,
@@ -282,6 +288,12 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
           guaranteeCase.id,
           'Reparación incorporada',
           `“${description.trim()}” se registró por ${formatCLP(amount)} y quedó Pendiente${details ? ` · ${details}` : ''}.`
+        );
+      } else {
+        logAudit(
+          guaranteeCase.id,
+          'Cargo agregado',
+          `${conceptLabel(normalizedCategory)} · “${description.trim()}” · -${formatCLP(amount)}`
         );
       }
     }
