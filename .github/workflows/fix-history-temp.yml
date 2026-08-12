@@ -1,0 +1,79 @@
+name: Corregir historial temporal
+
+on:
+  push:
+    branches: [fix-historial-eventos-unicos-2]
+    paths:
+      - .github/workflows/fix-history-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-historial-eventos-unicos-2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Aplicar corrección
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app = Path('src/context/AppContext.tsx')
+          s = app.read_text()
+          s = s.replace("    logAudit(caseId, newCharge.amount < 0 ? 'Abono Creado' : 'Cargo Creado', `${newCharge.description} por $${Math.abs(newCharge.amount)} añadido`);\n", "")
+          s = s.replace("    logAudit(caseId, updatedCharge.amount < 0 ? 'Abono Actualizado' : 'Cargo Actualizado', `Movimiento ${chargeId} actualizado`);\n", "")
+          app.write_text(s)
+
+          charges = Path('src/components/GuaranteeCaseDetail/ChargesTab.tsx')
+          s = charges.read_text()
+          old = """      if (isRepairCharge && (\n        editingCharge.repairTracking?.provider !== repairProvider.trim()\n        || editingCharge.repairTracking?.providerPhone !== repairProviderPhone.trim()\n        || editingCharge.repairTracking?.providerEmail !== repairProviderEmail.trim().toLowerCase()\n      )) changes.push('contacto del maestro/proveedor actualizado');\n\n      updateCharge(guaranteeCase.id, editingCharge.id, nextChargeData);\n      logAudit(\n        guaranteeCase.id,\n        movementKind === 'ABONO' ? 'Abono actualizado' : 'Cargo actualizado',\n        `“${editingCharge.description}”: ${changes.join('; ') || 'movimiento guardado sin cambios visibles'}.`\n      );\n      syncPreparationStatus(guaranteeCase.charges.map(ch =>\n        ch.id === editingCharge.id ? { ...ch, ...nextChargeData } : ch\n      ));\n"""
+          new = """      if (isRepairCharge && (\n        editingCharge.repairTracking?.provider !== repairProvider.trim()\n        || editingCharge.repairTracking?.providerPhone !== repairProviderPhone.trim()\n        || editingCharge.repairTracking?.providerEmail !== repairProviderEmail.trim().toLowerCase()\n      )) changes.push('contacto del maestro/proveedor actualizado');\n      if (isRepairCharge && (editingCharge.repairTracking?.responsible || '') !== repairResponsible) {\n        changes.push('responsable de reparación actualizado');\n      }\n      if (isRepairCharge && parseFormattedDateToInput(editingCharge.repairTracking?.commitmentDate || '') !== repairCommitmentDate) {\n        changes.push('fecha de compromiso actualizada');\n      }\n\n      if (changes.length > 0) {\n        updateCharge(guaranteeCase.id, editingCharge.id, nextChargeData);\n        logAudit(\n          guaranteeCase.id,\n          movementKind === 'ABONO' ? 'Abono actualizado' : 'Cargo actualizado',\n          `“${editingCharge.description}”: ${changes.join('; ')}.`\n        );\n        syncPreparationStatus(guaranteeCase.charges.map(ch =>\n          ch.id === editingCharge.id ? { ...ch, ...nextChargeData } : ch\n        ));\n      }\n"""
+          if old not in s:
+              raise SystemExit('No se encontró bloque de edición de cargo')
+          s = s.replace(old, new)
+
+          old2 = """      if (movementKind === 'ABONO') {\n        logAudit(\n          guaranteeCase.id,\n          'Abono incorporado',\n          `“${description.trim()}” se registró por ${formatCLP(amount)} como fondo a favor del arrendatario${normalizedCategory !== 'OTRO' ? ` · referencia ${conceptLabel(normalizedCategory)}` : ''}.`\n        );\n      }\n\n      if (isRepairCharge) {\n        const tracking = nextChargeData.repairTracking;\n        const details = [\n          tracking?.provider ? `proveedor ${tracking.provider}` : null,\n          tracking?.providerPhone ? `tel. ${tracking.providerPhone}` : null,\n          tracking?.providerEmail ? `correo ${tracking.providerEmail}` : null,\n          tracking?.responsible ? `responsable ${tracking.responsible}` : null,\n          tracking?.commitmentDate ? `compromiso inicial ${formatDate(tracking.commitmentDate)}` : null\n        ].filter(Boolean).join(' · ');\n        logAudit(\n          guaranteeCase.id,\n          'Reparación incorporada',\n          `“${description.trim()}” se registró por ${formatCLP(amount)} y quedó Pendiente${details ? ` · ${details}` : ''}.`\n        );\n      }\n"""
+          new2 = """      if (movementKind === 'ABONO') {\n        logAudit(\n          guaranteeCase.id,\n          'Abono incorporado',\n          `“${description.trim()}” se registró por ${formatCLP(amount)} como fondo a favor del arrendatario${normalizedCategory !== 'OTRO' ? ` · referencia ${conceptLabel(normalizedCategory)}` : ''}.`\n        );\n      } else if (isRepairCharge) {\n        const tracking = nextChargeData.repairTracking;\n        const details = [\n          tracking?.provider ? `proveedor ${tracking.provider}` : null,\n          tracking?.providerPhone ? `tel. ${tracking.providerPhone}` : null,\n          tracking?.providerEmail ? `correo ${tracking.providerEmail}` : null,\n          tracking?.responsible ? `responsable ${tracking.responsible}` : null,\n          tracking?.commitmentDate ? `compromiso inicial ${formatDate(tracking.commitmentDate)}` : null\n        ].filter(Boolean).join(' · ');\n        logAudit(\n          guaranteeCase.id,\n          'Reparación incorporada',\n          `“${description.trim()}” se registró por ${formatCLP(amount)} y quedó Pendiente${details ? ` · ${details}` : ''}.`\n        );\n      } else {\n        logAudit(\n          guaranteeCase.id,\n          'Cargo agregado',\n          `${conceptLabel(normalizedCategory)} · “${description.trim()}” · -${formatCLP(amount)}`\n        );\n      }\n"""
+          if old2 not in s:
+              raise SystemExit('No se encontró bloque de creación de cargo')
+          s = s.replace(old2, new2)
+          charges.write_text(s)
+
+          hist = Path('src/components/GuaranteeCaseDetail/HistoryTab.tsx')
+          s = hist.read_text()
+          marker = """    if (log.action === 'Cargo Actualizado' && /^Cargo\\s+.+\\s+actualizado$/i.test(log.detail)) return null;\n    if (log.action === 'Reparación Actualizada' && /^Reparación\\s+.+\\s+actualizada$/i.test(log.detail)) return null;\n"""
+          replacement = """    if (log.action === 'Cargo Actualizado' && /^Cargo\\s+.+\\s+actualizado$/i.test(log.detail)) return null;\n    if (/^Cargo Actualizado$/i.test(log.action) && /^Movimiento\\s+.+\\s+actualizado$/i.test(log.detail)) return null;\n    if (/^(Cargo|Abono) actualizado$/i.test(log.action) && /movimiento guardado sin cambios visibles/i.test(log.detail)) return null;\n    if (log.action === 'Reparación Actualizada' && /^Reparación\\s+.+\\s+actualizada$/i.test(log.detail)) return null;\n"""
+          if marker not in s:
+              raise SystemExit('No se encontró filtro de historial')
+          s = s.replace(marker, replacement)
+
+          filter_marker = """    if (event.action === 'Cargo agregado') {\n      const detailedRepairEvent = all.some(candidate =>\n        candidate.id !== event.id &&\n        candidate.action === 'Reparación incorporada' &&\n        candidate.user === event.user &&\n        Math.abs(candidate.sortValue - event.sortValue) <= 3000\n      );\n      if (detailedRepairEvent) return false;\n    }\n\n    const duplicate = all.findIndex(candidate =>\n"""
+          filter_replacement = """    if (event.action === 'Cargo agregado' || event.action === 'Cargo Creado') {\n      const detailedRepairEvent = all.some(candidate =>\n        candidate.id !== event.id &&\n        candidate.action === 'Reparación incorporada' &&\n        candidate.user === event.user &&\n        Math.abs(candidate.sortValue - event.sortValue) <= 3000\n      );\n      if (detailedRepairEvent) return false;\n    }\n\n    if (event.action === 'Abono Creado') {\n      const detailedCreditEvent = all.some(candidate =>\n        candidate.id !== event.id &&\n        candidate.action === 'Abono incorporado' &&\n        candidate.user === event.user &&\n        Math.abs(candidate.sortValue - event.sortValue) <= 3000\n      );\n      if (detailedCreditEvent) return false;\n    }\n\n    const duplicate = all.findIndex(candidate =>\n"""
+          if filter_marker not in s:
+              raise SystemExit('No se encontró filtro final de historial')
+          s = s.replace(filter_marker, filter_replacement)
+          hist.write_text(s)
+          PY
+
+          echo 'Usos de updateCharge:'
+          grep -R "updateCharge(" -n src --exclude='AppContext.tsx' || true
+          git diff --check
+      - name: Validar
+        run: |
+          npm ci
+          npm run lint
+          npm run test:rules
+          npm run build
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/context/AppContext.tsx src/components/GuaranteeCaseDetail/ChargesTab.tsx src/components/GuaranteeCaseDetail/HistoryTab.tsx
+          git commit -m "Evitar eventos duplicados en historial"
+          git push origin HEAD:fix-historial-eventos-unicos-2
