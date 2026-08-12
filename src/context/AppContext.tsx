@@ -401,7 +401,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       charges: [...c.charges, newCharge],
       movements: creditMovement ? [...c.movements, creditMovement] : c.movements
     }) : c));
-    logAudit(caseId, newCharge.amount < 0 ? 'Abono Creado' : 'Cargo Creado', `${newCharge.description} por $${Math.abs(newCharge.amount)} añadido`);
   };
 
   const updateCharge = (caseId: string, chargeId: string, updates: Partial<Charge>) => {
@@ -425,7 +424,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         movements
       });
     }));
-    logAudit(caseId, updatedCharge.amount < 0 ? 'Abono Actualizado' : 'Cargo Actualizado', `Movimiento ${chargeId} actualizado`);
   };
 
   const deleteCharge = (caseId: string, chargeId: string) => {

@@ -100,6 +100,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
     if (log.action === 'Seguimiento Registrado') return null;
     if (log.action === 'Preparación Actualizada') return null;
     if (log.action === 'Cargo Actualizado' && /^Cargo\s+.+\s+actualizado$/i.test(log.detail)) return null;
+    if (/^Cargo Actualizado$/i.test(log.action) && /^Movimiento\s+.+\s+actualizado$/i.test(log.detail)) return null;
+    if (/^(Cargo|Abono) actualizado$/i.test(log.action) && /movimiento guardado sin cambios visibles/i.test(log.detail)) return null;
     if (log.action === 'Reparación Actualizada' && /^Reparación\s+.+\s+actualizada$/i.test(log.detail)) return null;
 
     let action = log.action;
@@ -221,7 +223,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
   const sortedEvents = [...auditEvents, ...followUpEvents].sort((a, b) => b.sortValue - a.sortValue);
 
   const events = sortedEvents.filter((event, index, all) => {
-    if (event.action === 'Cargo agregado') {
+    if (event.action === 'Cargo agregado' || event.action === 'Cargo Creado') {
       const detailedRepairEvent = all.some(candidate =>
         candidate.id !== event.id &&
         candidate.action === 'Reparación incorporada' &&
@@ -229,6 +231,16 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({ guaranteeCase }) => {
         Math.abs(candidate.sortValue - event.sortValue) <= 3000
       );
       if (detailedRepairEvent) return false;
+    }
+
+    if (event.action === 'Abono Creado') {
+      const detailedCreditEvent = all.some(candidate =>
+        candidate.id !== event.id &&
+        candidate.action === 'Abono incorporado' &&
+        candidate.user === event.user &&
+        Math.abs(candidate.sortValue - event.sortValue) <= 3000
+      );
+      if (detailedCreditEvent) return false;
     }
 
     const duplicate = all.findIndex(candidate =>
