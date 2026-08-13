@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { GuaranteeCase } from '../../types';
 import { DocumentsTab } from './DocumentsTab';
 import { HistoryTab } from './HistoryTab';
+import { FinancialTracePanel } from './FinancialTracePanel';
 import { FileText, History } from 'lucide-react';
 
 interface DocumentsHistoryTabProps {
@@ -39,7 +40,10 @@ export const DocumentsHistoryTab: React.FC<DocumentsHistoryTabProps> = ({ guaran
       {section === 'documents' ? (
         <DocumentsTab guaranteeCase={guaranteeCase} />
       ) : (
-        <HistoryTab guaranteeCase={guaranteeCase} />
+        <div className="space-y-5">
+          <FinancialTracePanel guaranteeCase={guaranteeCase} />
+          <HistoryTab guaranteeCase={guaranteeCase} />
+        </div>
       )}
     </div>
   );
