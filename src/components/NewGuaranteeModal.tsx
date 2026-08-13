@@ -300,7 +300,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
                 <input
                   type="number"
                   min="1"
-                  step="5000"
+                  step="1"
                   required
                   value={monthlyRent}
                   onChange={(e) => setMonthlyRent(Number(e.target.value))}
@@ -327,7 +327,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
                 <input
                   type="number"
                   min="1"
-                  step="5000"
+                  step="1"
                   required
                   value={guaranteeAmount}
                   onChange={(e) => setGuaranteeAmount(Number(e.target.value))}
