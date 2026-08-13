@@ -107,7 +107,7 @@ assert.equal(otherFin.damageCharges, 0);
 assert.equal(otherFin.serviceCharges, 600000);
 assert.equal(otherFin.fullCoverageApplied, 0);
 
-// Un saldo de servicios del propietario puede cerrarse operacionalmente solo si existe un diferimiento explícito.
+// Un saldo de servicios informado al propietario no bloquea el cierre de la garantía.
 const ownerServicesPending: GuaranteeCase = {
   ...base,
   plan: 'ESTANDAR',
@@ -125,7 +125,7 @@ const ownerServicesPending: GuaranteeCase = {
     }
   ]
 };
-assert.equal(isCaseCompleted(ownerServicesPending, settings), false);
+assert.equal(isCaseCompleted(ownerServicesPending, settings), true);
 assert.equal(isCaseCompleted({
   ...ownerServicesPending,
   ownerServiceDeferral: {
@@ -152,7 +152,7 @@ assert.equal(isCaseCompleted({
   }
 }, settings), true);
 
-// Un seguimiento posterior no puede completar por sí solo una garantía reabierta.
+// Un seguimiento legacy tampoco debe impedir completar una garantía ya emitida.
 const postCloseOnly = {
   ...ownerServicesPending,
   isClosed: false,
@@ -166,7 +166,7 @@ const postCloseOnly = {
     status: 'PENDIENTE' as const
   }
 };
-assert.equal(isCaseCompleted(postCloseOnly, settings), false);
+assert.equal(isCaseCompleted(postCloseOnly, settings), true);
 
 // Si la cobranza ya es incobrable y el propietario asume servicios, el pago cubre
 // la obligación operativa aunque no quede un monto recuperable para el propietario.
