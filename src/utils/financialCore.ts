@@ -88,15 +88,16 @@ export function calculateGuaranteeFinances(
 
   const guaranteeUsed = guaranteeForDamage + guaranteeForServices;
 
-  // Solo se cobra lo que fue desembolsado para cubrir danos.
-  const ownerContributionRequired = ownerRepairFundingRequired;
+  // La liquidacion informa toda la diferencia economica, incluidos servicios a cargo del propietario.
+  // La cuenta por cobrar operativa solo incluye montos efectivamente desembolsados para cubrir danos.
+  const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
   const tenantReceivableAmount = ownerRepairFundingRequired + faunaFinancingRequired;
 
-  const refundToTenant = rawBalance > 0 ? rawBalance : 0;
-  const tenantDeficit = tenantReceivableAmount;
-  const isSurplus = refundToTenant > 0;
-  const isInsufficient = tenantDeficit > 0;
-  const isExact = !isSurplus && !isInsufficient;
+  const isSurplus = rawBalance > 0;
+  const isExact = rawBalance === 0;
+  const isInsufficient = rawBalance < 0;
+  const refundToTenant = isSurplus ? rawBalance : 0;
+  const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
   return {
     guaranteeAmount,
