@@ -24,6 +24,7 @@ import {
   calculateFundingReadiness,
   calculateGuaranteeFinances,
   calculatePaymentDistribution,
+  canConfirmGuaranteeLiquidation,
   isChargeIncludedInLiquidation
 } from '../utils/calculations';
 
@@ -93,9 +94,13 @@ export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = ini
   if (c.preparationStatus !== 'LISTA') return false;
   if (c.blockedBy !== 'SIN_BLOQUEO') return false;
 
-  if (c.refund && c.refund.amount > 0 && c.refund.status !== 'TRANSFERIDA') return false;
+  const fin = calculateGuaranteeFinances(c, settings);
+  const originalRefund = c.liquidationSnapshot?.financials.refundToTenant ?? fin.refundToTenant;
+  const originalDeficit = c.liquidationSnapshot?.financials.tenantDeficit ?? fin.tenantDeficit;
 
-  if (c.receivableStatus && c.receivableStatus !== 'PAGADA' && c.receivableStatus !== 'INCOBRABLE') {
+  if (originalRefund > 0 && c.refund?.status !== 'TRANSFERIDA') return false;
+
+  if (originalDeficit > 0 && c.receivableStatus !== 'PAGADA' && c.receivableStatus !== 'INCOBRABLE') {
     return false;
   }
 
@@ -538,11 +543,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const emitLiquidation = (caseId: string) => {
     const targetCase = cases.find(c => c.id === caseId);
-    if (!targetCase || targetCase.liquidationStatus !== 'LISTA' || targetCase.blockedBy !== 'SIN_BLOQUEO') return;
+    if (!targetCase || !canConfirmGuaranteeLiquidation(targetCase, settings)) return;
 
     const fin = calculateGuaranteeFinances(targetCase, settings);
     const readiness = calculateFundingReadiness(targetCase, settings);
-    if (!readiness.readyToConfirm) return;
 
     let refund = targetCase.refund;
     let receivableId = targetCase.receivableId;
@@ -844,8 +848,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (targetCase.blockedBy !== 'SIN_BLOQUEO') pending.push(`bloqueo por ${targetCase.blockedBy.toLowerCase()}`);
       if (targetCase.preparationStatus !== 'LISTA') pending.push('preparación física');
       if (targetCase.liquidationStatus !== 'EMITIDA') pending.push('liquidación emitida');
-      if (targetCase.refund && targetCase.refund.amount > 0 && targetCase.refund.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
-      if (targetCase.receivableStatus && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
+      const closeFin = calculateGuaranteeFinances(targetCase, settings);
+      const originalRefund = targetCase.liquidationSnapshot?.financials.refundToTenant ?? closeFin.refundToTenant;
+      const originalDeficit = targetCase.liquidationSnapshot?.financials.tenantDeficit ?? closeFin.tenantDeficit;
+      if (originalRefund > 0 && targetCase.refund?.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
+      if (originalDeficit > 0 && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
       if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');
       return { success: false, message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.` };
     }

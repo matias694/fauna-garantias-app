@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
 import { formatCLP, getLocalDateInputValue } from '../../utils/formatters';
-import { calculateFundingReadiness, calculateGuaranteeFinances } from '../../utils/calculations';
+import { calculateFundingReadiness, calculateGuaranteeFinances, canConfirmGuaranteeLiquidation } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
 import { CheckCircle2, AlertTriangle, FileText, Plus, Banknote, Lock, Clock3, X } from 'lucide-react';
 
@@ -39,8 +39,9 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   const settlement = getSettlementState(guaranteeCase, receivable, settings);
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
   const checklistReady = guaranteeCase.liquidationStatus === 'LISTA';
+  const preparationReady = guaranteeCase.preparationStatus === 'LISTA';
   const hasManualBlock = guaranteeCase.blockedBy !== 'SIN_BLOQUEO';
-  const canConfirm = checklistReady && readiness.readyToConfirm && !hasManualBlock;
+  const canConfirm = canConfirmGuaranteeLiquidation(guaranteeCase, settings);
 
   const originalRefund = guaranteeCase.liquidationSnapshot?.financials.refundToTenant ?? fin.refundToTenant;
   const originalDeficit = guaranteeCase.liquidationSnapshot?.financials.tenantDeficit ?? fin.tenantDeficit;
@@ -50,13 +51,15 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
   const stageLabel = isConfirmed
     ? 'Confirmada'
-    : checklistReady && hasManualBlock
-      ? 'Lista con bloqueo'
-      : checklistReady && !readiness.readyToConfirm
-        ? 'Lista · faltan fondos para reparar'
-        : checklistReady
-          ? 'Lista para confirmar'
-          : 'En preparación';
+    : checklistReady && !preparationReady
+      ? 'Lista · reparaciones pendientes'
+      : checklistReady && hasManualBlock
+        ? 'Lista con bloqueo'
+        : checklistReady && !readiness.readyToConfirm
+          ? 'Lista · faltan fondos para reparar'
+          : checklistReady
+            ? 'Lista para confirmar'
+            : 'En preparación';
 
   const projectedResult = fin.isSurplus
     ? `Devolver ${formatCLP(fin.refundToTenant)}`
@@ -220,12 +223,17 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
                 <AlertTriangle className="w-4 h-4 text-amber-600" /> Completa los antecedentes pendientes para poder confirmar.
               </span>
             )}
-            {checklistReady && hasManualBlock && !isConfirmed && (
+            {checklistReady && !preparationReady && !isConfirmed && (
+              <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600" /> Finaliza o cancela las reparaciones pendientes antes de confirmar la liquidación.
+              </span>
+            )}
+            {checklistReady && preparationReady && hasManualBlock && !isConfirmed && (
               <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-600" /> El caso está bloqueado por {guaranteeCase.blockedBy.toLowerCase()}. Debe quedar “Sin bloqueo” antes de confirmar.
               </span>
             )}
-            {checklistReady && !hasManualBlock && !readiness.readyToConfirm && !isConfirmed && (
+            {checklistReady && preparationReady && !hasManualBlock && !readiness.readyToConfirm && !isConfirmed && (
               <span className="text-xs text-amber-800 font-semibold flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-amber-600" /> Faltan {formatCLP(readiness.ownerRepairPendingProvision)} del propietario para financiar reparaciones antes de confirmar.
               </span>

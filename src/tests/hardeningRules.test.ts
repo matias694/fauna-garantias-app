@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { GuaranteeCase, SystemSettings } from '../types';
-import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
+import { calculateFundingReadiness, calculateGuaranteeFinances, canConfirmGuaranteeLiquidation } from '../utils/calculations';
 import { formatDate, getLocalDateInputValue, parseLocalDate } from '../utils/formatters';
 import { isCaseCompleted, normalizeClosedOwnerPending } from '../context/AppContext';
 
@@ -215,4 +215,41 @@ assert.equal(migratedClosed.ownerPostClosePending?.amountAtTransfer, 200000);
 assert.equal(migratedClosed.ownerPostClosePending?.status, 'PENDIENTE');
 assert.equal(isCaseCompleted(migratedClosed, settings), true);
 
-console.log('✓ Reglas de hardening, fechas, migraciones, incobrables y seguimiento posterior validadas');
+// Confirmar la liquidación exige que la preparación física esté lista.
+assert.equal(canConfirmGuaranteeLiquidation({ ...base, preparationStatus: 'REPARANDO' }, settings), false);
+assert.equal(canConfirmGuaranteeLiquidation({ ...base, preparationStatus: 'LISTA' }, settings), true);
+
+// Un resultado emitido con devolución no puede completarse si falta registrar la transferencia.
+const emittedSurplus = {
+  ...base,
+  liquidationStatus: 'EMITIDA' as const,
+  guaranteeAmount: 500000,
+  charges: [{
+    id: 'CHG-SURPLUS', category: 'GASTOS_COMUNES' as const, description: 'Cargo final', amount: 400000,
+    date: '12/08/2026', type: 'GASTO_COMUN' as const, notes: '', documents: [], photos: []
+  }],
+  refund: undefined,
+  receivableStatus: undefined
+};
+assert.equal(isCaseCompleted(emittedSurplus, settings), false);
+assert.equal(isCaseCompleted({
+  ...emittedSurplus,
+  refund: { amount: 100000, status: 'TRANSFERIDA' as const }
+}, settings), true);
+
+// Un déficit emitido tampoco puede completarse si, por inconsistencia, falta su estado de cobranza.
+const deferredOwnerServices = {
+  amountAtDeferral: 200000,
+  reason: 'Pago posterior',
+  nextReviewDate: '15/09/2026',
+  responsible: 'Usuario',
+  createdAt: '2026-08-12T01:00:00.000Z',
+  createdBy: 'ADMINISTRADOR'
+};
+assert.equal(isCaseCompleted({
+  ...ownerServicesPending,
+  receivableStatus: undefined,
+  ownerServiceDeferral: deferredOwnerServices
+}, settings), false);
+
+console.log('✓ Reglas de hardening, confirmación, acciones financieras, fechas, migraciones e incobrables validadas');

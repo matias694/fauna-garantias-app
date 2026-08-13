@@ -252,6 +252,17 @@ export function calculateFundingReadiness(
   };
 }
 
+
+export function canConfirmGuaranteeLiquidation(
+  c: GuaranteeCase,
+  settings: SystemSettings
+): boolean {
+  if (c.liquidationStatus !== 'LISTA') return false;
+  if (c.preparationStatus !== 'LISTA') return false;
+  if (c.blockedBy !== 'SIN_BLOQUEO') return false;
+  return calculateFundingReadiness(c, settings).readyToConfirm;
+}
+
 export function calculateOwnerLiquidationReconciliation(
   c: GuaranteeCase,
   settings: SystemSettings
