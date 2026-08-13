@@ -10,9 +10,7 @@ import { SettingsView } from './components/SettingsView';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
-import { ExactBalanceDemoSeeder } from './components/ExactBalanceDemoSeeder';
-import { FullCoverageDemoSeeder } from './components/FullCoverageDemoSeeder';
-import { FullOwnerRecoveryDemoSeeder } from './components/FullOwnerRecoveryDemoSeeder';
+import { DemoDataV3Reset } from './components/DemoDataV3Reset';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -45,11 +43,9 @@ const MainContent: React.FC = () => {
 export default function App() {
   return (
     <AppProvider>
+      <DemoDataV3Reset />
       <LegacyReceivableReconciler />
       <CompletedCaseSync />
-      <ExactBalanceDemoSeeder />
-      <FullCoverageDemoSeeder />
-      <FullOwnerRecoveryDemoSeeder />
       <MainContent />
     </AppProvider>
   );
