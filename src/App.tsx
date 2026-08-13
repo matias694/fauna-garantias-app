@@ -10,7 +10,7 @@ import { SettingsView } from './components/SettingsView';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
-import { DemoDataV3Reset } from './components/DemoDataV3Reset';
+import { DemoDataV3Reset } from './components/ExactBalanceDemoSeeder';
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
