@@ -28,15 +28,16 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
   const [tenantEmail, setTenantEmail] = useState('');
   const [tenantPhone, setTenantPhone] = useState('');
 
-  const [monthlyRent, setMonthlyRent] = useState<number>(550000);
-  const [plan, setPlan] = useState<AdministrationPlan>('FULL');
-  const [contractStartDate, setContractStartDate] = useState('2025-08-01');
+  const [monthlyRent, setMonthlyRent] = useState<number>(0);
+  const [plan, setPlan] = useState<AdministrationPlan | ''>('');
+  const [contractStartDate, setContractStartDate] = useState('');
   const [contractEndDate, setContractEndDate] = useState(todayStr);
 
-  const [guaranteeAmount, setGuaranteeAmount] = useState<number>(550000);
+  const [guaranteeAmount, setGuaranteeAmount] = useState<number>(0);
   const [receptionDate, setReceptionDate] = useState(todayStr);
   const [responsible, setResponsible] = useState(settings.responsiblesList[0] || 'Constanza Silva');
   const [initialNotes, setInitialNotes] = useState('');
+  const [formError, setFormError] = useState('');
 
   if (!isOpen) return null;
 
@@ -44,10 +45,44 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
   const formattedReceptionDate = receptionDate.split('-').reverse().join('/');
   const autoDeadline = addDaysToDate(formattedReceptionDate, settings.maxLiquidationDays || 60);
 
+  const resetForm = () => {
+    setAddress('');
+    setComuna('Providencia');
+    setUnit('');
+    setOwnerName(''); setOwnerRut(''); setOwnerEmail(''); setOwnerPhone('');
+    setTenantName(''); setTenantRut(''); setTenantEmail(''); setTenantPhone('');
+    setMonthlyRent(0);
+    setPlan('');
+    setContractStartDate('');
+    setContractEndDate(getLocalDateInputValue());
+    setGuaranteeAmount(0);
+    setReceptionDate(getLocalDateInputValue());
+    setResponsible(settings.responsiblesList[0] || 'Constanza Silva');
+    setInitialNotes('');
+    setFormError('');
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
 
-    if (!address.trim() || !tenantName.trim() || !ownerName.trim()) return;
+    if (!address.trim() || !tenantName.trim() || !ownerName.trim() || !plan || !contractStartDate || !contractEndDate || !receptionDate) {
+      setFormError('Completa los campos obligatorios antes de crear la garantía.');
+      return;
+    }
+    if (monthlyRent <= 0 || guaranteeAmount <= 0) {
+      setFormError('El canon mensual y el monto de garantía deben ser mayores a $0.');
+      return;
+    }
+    if (contractEndDate < contractStartDate) {
+      setFormError('La fecha de término del contrato no puede ser anterior a la fecha de inicio.');
+      return;
+    }
 
     const created = createGuaranteeCase({
       propertyAddress: address,
@@ -77,6 +112,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
       nextManagementResponsible: responsible
     });
 
+    resetForm();
     onClose();
     setSelectedCaseId(created.id);
     setActiveView('case-detail');
@@ -97,7 +133,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -263,7 +299,9 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Canon Mensual ($ CLP)</label>
                 <input
                   type="number"
+                  min="1"
                   step="5000"
+                  required
                   value={monthlyRent}
                   onChange={(e) => setMonthlyRent(Number(e.target.value))}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-semibold text-slate-800"
@@ -273,10 +311,12 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Plan de Administración</label>
                 <select
+                  required
                   value={plan}
-                  onChange={(e) => setPlan(e.target.value as AdministrationPlan)}
+                  onChange={(e) => setPlan(e.target.value as AdministrationPlan | '')}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-semibold text-emerald-800"
                 >
+                  <option value="" disabled>Seleccionar plan...</option>
                   <option value="ESTANDAR">Estándar</option>
                   <option value="PLUS">Plus</option>
                   <option value="FULL">Full (Incluye Cobertura Daños)</option>
@@ -286,6 +326,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Monto Garantía ($ CLP) *</label>
                 <input
                   type="number"
+                  min="1"
                   step="5000"
                   required
                   value={guaranteeAmount}
@@ -293,6 +334,31 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-bold text-emerald-900 bg-emerald-50/50"
                 />
                 <span className="text-[10px] text-slate-500 block mt-0.5">{formatCLP(guaranteeAmount)}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Inicio del contrato *</label>
+                <input
+                  type="date"
+                  required
+                  max={contractEndDate || undefined}
+                  value={contractStartDate}
+                  onChange={(e) => { setContractStartDate(e.target.value); setFormError(''); }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Término del contrato *</label>
+                <input
+                  type="date"
+                  required
+                  min={contractStartDate || undefined}
+                  value={contractEndDate}
+                  onChange={(e) => { setContractEndDate(e.target.value); setFormError(''); }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs"
+                />
               </div>
             </div>
 
@@ -341,11 +407,17 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             ></textarea>
           </div>
 
+          {formError && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 text-xs font-semibold text-rose-800">
+              {formError}
+            </div>
+          )}
+
           {/* Form Actions */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 cursor-pointer"
             >
               Cancelar
