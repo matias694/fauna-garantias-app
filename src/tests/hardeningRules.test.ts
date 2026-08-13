@@ -196,6 +196,8 @@ assert.equal(getLocalDateInputValue(localSample), '2026-08-12');
 assert.equal(parseLocalDate('2026-08-12')?.getDate(), 12);
 assert.equal(formatDate('2026-08-12T03:00:00.000Z'), '12/08/2026');
 
+// Los diferimientos legacy cerrados ya no se migran a seguimiento posterior si el saldo
+// de servicios dejó de ser una tarea operacional de la garantía.
 const legacyClosedDeferred = {
   ...ownerServicesPending,
   isClosed: true,
@@ -210,9 +212,8 @@ const legacyClosedDeferred = {
   }
 };
 const migratedClosed = normalizeClosedOwnerPending(legacyClosedDeferred);
-assert.equal(migratedClosed.ownerServiceDeferral, undefined);
-assert.equal(migratedClosed.ownerPostClosePending?.amountAtTransfer, 200000);
-assert.equal(migratedClosed.ownerPostClosePending?.status, 'PENDIENTE');
+assert.equal(migratedClosed.ownerServiceDeferral?.amountAtDeferral, 200000);
+assert.equal(migratedClosed.ownerPostClosePending, undefined);
 assert.equal(isCaseCompleted(migratedClosed, settings), true);
 
 // Confirmar la liquidación exige que la preparación física esté lista.
