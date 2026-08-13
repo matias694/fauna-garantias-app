@@ -2,18 +2,10 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
 import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
-import { Banknote, CheckCircle2, Clock3, ShieldCheck, WalletCards, X } from 'lucide-react';
+import { Banknote, CheckCircle2, ShieldCheck, WalletCards, X } from 'lucide-react';
 
-type OwnerPaymentPurpose = 'REPARACIONES' | 'SERVICIOS';
 type OwnerPaymentMode = 'TRANSFERIDO_FAUNA' | 'PAGADO_DIRECTO';
 
-/**
- * Resumen operativo para garantÃ­as insuficientes.
- * - GarantÃ­a primero a daÃ±os.
- * - Plan Full, cuando corresponde, protege al propietario sobre el daÃ±o restante.
- * - El abono proporcional del arrendatario se imputa primero a GC/servicios.
- * - Solo su excedente puede compensar obligaciones de daÃ±o y el saldo final.
- */
 export const FullCoverageCaseBanner: React.FC = () => {
   const {
     activeView,
@@ -22,50 +14,32 @@ export const FullCoverageCaseBanner: React.FC = () => {
     settings,
     userRole,
     updateGuaranteeCase,
-    addFinancialMovement,
-    logAudit
+    addFinancialMovement
   } = useApp();
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [paymentPurpose, setPaymentPurpose] = useState<OwnerPaymentPurpose>('SERVICIOS');
   const [paymentMode, setPaymentMode] = useState<OwnerPaymentMode>('TRANSFERIDO_FAUNA');
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(getLocalDateInputValue());
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentError, setPaymentError] = useState('');
-  const [deferralModalOpen, setDeferralModalOpen] = useState(false);
-  const [deferralReason, setDeferralReason] = useState('');
-  const [deferralDate, setDeferralDate] = useState('');
-  const [deferralResponsible, setDeferralResponsible] = useState('');
-  const [deferralError, setDeferralError] = useState('');
 
   if (activeView !== 'case-detail' || !selectedCaseId) return null;
-
   const guaranteeCase = cases.find(c => c.id === selectedCaseId);
   if (!guaranteeCase) return null;
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
-  if (!fin.isInsufficient) return null;
-
   const readiness = calculateFundingReadiness(guaranteeCase, settings);
-  const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
   const isFull = guaranteeCase.plan === 'FULL';
-
   const ownerProvisionForDamage = readiness.ownerRepairFundedTotal;
-  const ownerProvisionForServices = readiness.ownerServiceFundedTotal;
   const damagePending = readiness.ownerRepairPendingProvision;
-  const servicesPending = readiness.ownerServicePending;
-  const activeServiceDeferral = servicesPending > 0 && !guaranteeCase.isClosed ? guaranteeCase.ownerServiceDeferral : undefined;
-  const postClosePending = servicesPending > 0 && guaranteeCase.isClosed ? guaranteeCase.ownerPostClosePending : undefined;
-  const selectedPending = paymentPurpose === 'REPARACIONES' ? damagePending : servicesPending;
+  const servicesInformational = readiness.ownerServiceInformationalPending;
 
-  const openOwnerPayment = (purpose: OwnerPaymentPurpose) => {
-    const pending = purpose === 'REPARACIONES' ? damagePending : servicesPending;
-    if (pending <= 0) return;
-    setPaymentPurpose(purpose);
+  const openRepairPayment = () => {
+    if (damagePending <= 0) return;
     setPaymentMode('TRANSFERIDO_FAUNA');
-    setPaymentAmount(pending);
+    setPaymentAmount(damagePending);
     setPaymentDate(getLocalDateInputValue());
     setPaymentReference('');
     setPaymentNotes('');
@@ -73,19 +47,10 @@ export const FullCoverageCaseBanner: React.FC = () => {
     setPaymentModalOpen(true);
   };
 
-  const changePaymentPurpose = (purpose: OwnerPaymentPurpose) => {
-    const pending = purpose === 'REPARACIONES' ? damagePending : servicesPending;
-    setPaymentPurpose(purpose);
-    setPaymentAmount(pending);
-    setPaymentError('');
-  };
-
-  const registerOwnerPayment = (event: React.FormEvent) => {
+  const registerOwnerRepairPayment = (event: React.FormEvent) => {
     event.preventDefault();
-    const pending = paymentPurpose === 'REPARACIONES' ? damagePending : servicesPending;
-
-    if (paymentAmount <= 0 || paymentAmount > pending) {
-      setPaymentError(`El monto debe ser mayor a $0 y no puede superar el saldo pendiente de ${formatCLP(pending)}.`);
+    if (paymentAmount <= 0 || paymentAmount > damagePending) {
+      setPaymentError(`El monto debe ser mayor a $0 y no puede superar ${formatCLP(damagePending)}.`);
       return;
     }
     if (!paymentDate) {
@@ -93,462 +58,25 @@ export const FullCoverageCaseBanner: React.FC = () => {
       return;
     }
 
-    const purposeLabel = paymentPurpose === 'REPARACIONES' ? 'reparaciones' : 'gastos comunes/servicios';
+    updateGuaranteeCase(guaranteeCase.id, {
+      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount
+    });
+
     const modeLabel = paymentMode === 'TRANSFERIDO_FAUNA'
       ? 'Transferido a Fauna'
       : 'Pagado directamente por el propietario';
-    const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-    const collectionIsUncollectible = guaranteeCase.receivableStatus === 'INCOBRABLE';
-
-    const resolvesPostClosePending = Boolean(
-      guaranteeCase.isClosed
-      && guaranteeCase.ownerPostClosePending
-      && paymentPurpose === 'SERVICIOS'
-      && paymentAmount >= pending
-    );
-
-    updateGuaranteeCase(guaranteeCase.id, {
-      // Este saldo representa lo efectivamente asumido por el propietario y todavÃ­a no recuperado.
-      ownerContribution: collectionIsUncollectible
-        ? (guaranteeCase.ownerContribution || 0)
-        : (guaranteeCase.ownerContribution || 0) + paymentAmount,
-      ownerPostClosePending: guaranteeCase.ownerPostClosePending
-        ? {
-            ...guaranteeCase.ownerPostClosePending,
-            status: resolvesPostClosePending ? 'RESUELTO' : guaranteeCase.ownerPostClosePending.status,
-            resolvedAt: resolvesPostClosePending ? new Date().toISOString() : guaranteeCase.ownerPostClosePending.resolvedAt,
-            resolvedBy: resolvesPostClosePending ? userRole : guaranteeCase.ownerPostClosePending.resolvedBy,
-            resolutionNote: resolvesPostClosePending
-              ? `Pendiente cubierto mediante pago del propietario (${paymentMode === 'TRANSFERIDO_FAUNA' ? 'transferido a Fauna' : 'pago directo'}).`
-              : guaranteeCase.ownerPostClosePending.resolutionNote
-          }
-        : undefined
-    });
-
-    if (resolvesPostClosePending) {
-      logAudit(
-        guaranteeCase.id,
-        'Seguimiento posterior resuelto',
-        `Pendiente del propietario por ${formatCLP(pending)} resuelto mediante pago registrado`
-      );
-    }
 
     addFinancialMovement(guaranteeCase.id, {
       date: formatDate(paymentDate),
-      time,
+      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
       type: 'APORTE_PROPIETARIO',
-      ownerPaymentPurpose: paymentPurpose,
+      ownerPaymentPurpose: 'REPARACIONES',
       ownerPaymentMode: paymentMode,
       description: paymentMode === 'TRANSFERIDO_FAUNA'
-        ? `Fondos recibidos de propietario para ${purposeLabel} (${guaranteeCase.ownerName})`
-        : `Pago directo realizado por propietario para ${purposeLabel} (${guaranteeCase.ownerName})`,
+        ? `Fondos recibidos de propietario para reparaciones (${guaranteeCase.ownerName})`
+        : `Pago directo realizado por propietario para reparaciones (${guaranteeCase.ownerName})`,
       amount: paymentAmount,
       user: userRole,
-      reference: paymentReference.trim() || `${paymentMode}-${paymentPurpose}-${guaranteeCase.id}-${Date.now()}`,
-      observation: [
-        `Modalidad: ${modeLabel}`,
-        `Destino: ${purposeLabel}`,
-        collectionIsUncollectible
-          ? 'La cobranza del arrendatario ya estÃ¡ cerrada como incobrable; este monto queda asumido definitivamente por el propietario.'
-          : paymentMode === 'PAGADO_DIRECTO'
-            ? 'Fauna no recibiÃ³ estos fondos; se registra porque el propietario ya asumiÃ³ este costo y debe recuperarse si posteriormente paga el arrendatario.'
-            : 'Fauna recibiÃ³ estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',
-        paymentNotes.trim()
-      ].filter(Boolean).join(' Â· ')
-    });
-
-    if (collectionIsUncollectible) {
-      addFinancialMovement(guaranteeCase.id, {
-        date: formatDate(paymentDate),
-        time,
-        type: 'CASTIGO_PROPIETARIO',
-        description: 'Monto asumido por propietario despuÃ©s de cerrar cobranza como incobrable',
-        amount: paymentAmount,
-        user: userRole,
-        reference: `CASTIGO-POST-${guaranteeCase.id}-${Date.now()}`,
-        observation: 'No se incorpora a montos por recuperar porque la cobranza del arrendatario ya estaba cerrada como incobrable.'
-      });
-    }
-
-    setPaymentModalOpen(false);
-  };
-
-  const openServiceDeferral = () => {
-    if (!isConfirmed || servicesPending <= 0) return;
-    const currentFollowUp = guaranteeCase.isClosed
-      ? guaranteeCase.ownerPostClosePending
-      : guaranteeCase.ownerServiceDeferral;
-    if (guaranteeCase.isClosed && !currentFollowUp) return;
-
-    setDeferralReason(currentFollowUp?.reason || '');
-    setDeferralDate(currentFollowUp?.nextReviewDate || '');
-    setDeferralResponsible(currentFollowUp?.responsible || guaranteeCase.responsible || '');
-    setDeferralError('');
-    setDeferralModalOpen(true);
-  };
-
-  const registerServiceDeferral = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!isConfirmed || servicesPending <= 0) return;
-    if (!deferralReason.trim() || !deferralDate || !deferralResponsible) {
-      setDeferralError('Indica el acuerdo/motivo, la prÃ³xima fecha de revisiÃ³n y el responsable.');
-      return;
-    }
-
-    if (guaranteeCase.isClosed) {
-      const existingPostClose = guaranteeCase.ownerPostClosePending;
-      if (!existingPostClose || existingPostClose.status !== 'PENDIENTE') return;
-      updateGuaranteeCase(guaranteeCase.id, {
-        ownerPostClosePending: {
-          ...existingPostClose,
-          reason: deferralReason.trim(),
-          nextReviewDate: deferralDate,
-          responsible: deferralResponsible
-        }
-      });
-      logAudit(
-        guaranteeCase.id,
-        'Seguimiento posterior actualizado',
-        `${formatCLP(servicesPending)} pendientes del propietario Â· ${deferralReason.trim()} Â· prÃ³xima revisiÃ³n ${formatDate(deferralDate)} Â· responsable ${deferralResponsible}`
-      );
-      setDeferralModalOpen(false);
-      return;
-    }
-
-    const existing = guaranteeCase.ownerServiceDeferral;
-    updateGuaranteeCase(guaranteeCase.id, {
-      ownerServiceDeferral: {
-        amountAtDeferral: existing?.amountAtDeferral || servicesPending,
-        reason: deferralReason.trim(),
-        nextReviewDate: deferralDate,
-        responsible: deferralResponsible,
-        createdAt: existing?.createdAt || new Date().toISOString(),
-        createdBy: existing?.createdBy || userRole
-      },
-      nextManagement: `Revisar pendiente propietario de ${formatCLP(servicesPending)}`,
-      nextManagementDate: deferralDate,
-      nextManagementResponsible: deferralResponsible
-    });
-    logAudit(
-      guaranteeCase.id,
-      existing ? 'Pendiente propietario actualizado' : 'Pendiente propietario diferido',
-      `${formatCLP(servicesPending)} en gastos comunes/servicios Â· ${deferralReason.trim()} Â· prÃ³xima revisiÃ³n ${formatDate(deferralDate)} Â· responsable ${deferralResponsible}`
-    );
-    setDeferralModalOpen(false);
-  };
-
-  return (
-    <div className="px-4 sm:px-6 pt-5 max-w-7xl mx-auto">
-      <section className="bg-emerald-950 text-white rounded-2xl border border-emerald-900 shadow-sm p-4 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {isFull ? <ShieldCheck className="w-5 h-5 text-emerald-300" /> : <WalletCards className="w-5 h-5 text-emerald-300" />}
-            <div>
-              <h3 className="font-extrabold text-sm">CÃ³mo se cubre esta salida</h3>
-              <p className="text-[11px] text-emerald-200">
-                Resumen de fondos aplicados y saldos pendientes antes de confirmar la liquidaciÃ³n.
-              </p>
-            </div>
-          </div>
-          <div className="text-left sm:text-right">
-            <span className="text-[10px] uppercase font-bold text-emerald-300 block">Neto cargos y abonos</span>
-            <strong className="text-xl font-black font-mono">{formatCLP(fin.totalCharges)}</strong>
-            {fin.tenantCredits > 0 && (
-              <span className="text-[10px] text-emerald-200 block">Cargos {formatCLP(fin.grossCharges)} Â· Abonos {formatCLP(fin.tenantCredits)}</span>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          {fin.damageCharges > 0 && (
-            <div className="bg-white/10 rounded-xl border border-white/10 p-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
-              <div className="lg:w-64 shrink-0">
-                <span className="text-[10px] uppercase font-bold text-emerald-200 block">1. DaÃ±os y reparaciones</span>
-                <strong className="text-lg font-black font-mono">{formatCLP(fin.damageCharges)}</strong>
-              </div>
-
-              <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
-                {fin.guaranteeForDamage > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">GarantÃ­a <strong>{formatCLP(fin.guaranteeForDamage)}</strong></span>
-                )}
-                {isFull && fin.fullCoverageApplied > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/40 border border-emerald-500/30">Plan Full <strong>{formatCLP(fin.fullCoverageApplied)}</strong></span>
-                )}
-                {fin.creditsForDamage > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Excedente abono <strong>{formatCLP(fin.creditsForDamage)}</strong></span>
-                )}
-                {ownerProvisionForDamage > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">Propietario <strong>{formatCLP(ownerProvisionForDamage)}</strong></span>
-                )}
-              </div>
-
-              <div className="lg:w-48 shrink-0 lg:text-right">
-                {damagePending === 0 ? (
-                  <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold"><CheckCircle2 className="w-4 h-4" /> Reparaciones cubiertas</span>
-                ) : (
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Falta para reparar</span>
-                    <strong className="text-base font-black font-mono text-amber-100">{formatCLP(damagePending)}</strong>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {fin.serviceCharges > 0 && (
-            <div className="bg-white/10 rounded-xl border border-white/10 p-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
-              <div className="lg:w-64 shrink-0">
-                <span className="text-[10px] uppercase font-bold text-emerald-200 block">2. Gastos comunes y servicios</span>
-                <strong className="text-lg font-black font-mono">{formatCLP(fin.serviceCharges)}</strong>
-              </div>
-
-              <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
-                {fin.guaranteeForServices > 0 ? (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">GarantÃ­a sobrante <strong>{formatCLP(fin.guaranteeForServices)}</strong></span>
-                ) : (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-200">Sin garantÃ­a disponible</span>
-                )}
-                {fin.creditsForServices > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abono proporcional <strong>{formatCLP(fin.creditsForServices)}</strong></span>
-                )}
-                {ownerProvisionForServices > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">Pagado por propietario <strong>{formatCLP(ownerProvisionForServices)}</strong></span>
-                )}
-                {readiness.ownerServiceSettledFromTenant > 0 && (
-                  <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/30 border border-emerald-500/20">Cubierto posteriormente <strong>{formatCLP(readiness.ownerServiceSettledFromTenant)}</strong></span>
-                )}
-              </div>
-
-              <div className="lg:w-48 shrink-0 lg:text-right">
-                {servicesPending === 0 ? (
-                  <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold"><CheckCircle2 className="w-4 h-4" /> Sin saldo pendiente</span>
-                ) : (
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-amber-200 block">Pendiente propietario</span>
-                    <strong className="text-base font-black font-mono text-amber-100">{formatCLP(servicesPending)}</strong>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {!isConfirmed && damagePending > 0 && (
-          <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="text-[11px] text-amber-100">
-              <strong className="block text-xs">Faltan {formatCLP(damagePending)} para ejecutar las reparaciones.</strong>
-              <span className="block mt-0.5">Esta diferencia sÃ­ debe estar efectivamente asumida por el propietario antes de confirmar la liquidaciÃ³n.</span>
-              <span className="block mt-1">Registra si transfiriÃ³ los fondos a Fauna o si pagÃ³ directamente al proveedor.</span>
-            </div>
-            <button type="button" onClick={() => openOwnerPayment('REPARACIONES')} className="shrink-0 px-4 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
-              <Banknote className="w-4 h-4" /> Registrar pago propietario
-            </button>
-          </div>
-        )}
-
-        {servicesPending > 0 && (
-          <div className="bg-sky-300/10 border border-sky-300/25 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-[11px] text-sky-50">
-            <div className="flex items-start gap-2.5 min-w-0">
-              <Clock3 className="w-4 h-4 shrink-0 mt-0.5 text-sky-200" />
-              <div className="min-w-0">
-                <strong className="block text-xs">Quedan {formatCLP(servicesPending)} pendientes del propietario en gastos comunes y/o servicios.</strong>
-                {postClosePending ? (
-                  <>
-                    <span className="block mt-0.5 font-semibold text-sky-100">Seguimiento posterior: {postClosePending.reason}</span>
-                    <span className="block mt-0.5 text-sky-200">Revisar {formatDate(postClosePending.nextReviewDate)} Â· {postClosePending.responsible}</span>
-                  </>
-                ) : activeServiceDeferral ? (
-                  <>
-                    <span className="block mt-0.5 font-semibold text-sky-100">Pendiente diferido: {activeServiceDeferral.reason}</span>
-                    <span className="block mt-0.5 text-sky-200">Revisar {formatDate(activeServiceDeferral.nextReviewDate)} Â· {activeServiceDeferral.responsible}</span>
-                  </>
-                ) : (
-                  <span className="block mt-0.5">Este saldo no bloquea la liquidaciÃ³n. DespuÃ©s de confirmar puedes registrar el pago o dejar formalmente el pendiente diferido.</span>
-                )}
-              </div>
-            </div>
-            <div className="shrink-0 flex flex-wrap gap-2 justify-end">
-              <button type="button" onClick={() => openOwnerPayment('SERVICIOS')} className="px-3.5 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
-                <Banknote className="w-4 h-4" /> Registrar pago
-              </button>
-              {isConfirmed && (!guaranteeCase.isClosed || postClosePending) && (
-                <button type="button" onClick={openServiceDeferral} className="px-3.5 py-2 rounded-xl bg-sky-100/10 border border-sky-200/40 text-white hover:bg-sky-100/20 text-xs font-extrabold cursor-pointer">
-                  {guaranteeCase.isClosed ? 'Actualizar seguimiento' : activeServiceDeferral ? 'Editar pendiente' : 'Dejar pendiente'}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!isConfirmed && damagePending === 0 && (
-          <div className="bg-emerald-300/10 border border-emerald-300/30 rounded-xl px-3 py-2 text-[11px] text-emerald-100 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>
-              <strong>Las reparaciones estÃ¡n cubiertas y la liquidaciÃ³n puede continuar.</strong>
-              {servicesPending > 0
-                ? ' El saldo de gastos comunes/servicios quedarÃ¡ registrado como pendiente del propietario.'
-                : ' Revisa la liquidaciÃ³n y confÃ­rmala cuando los cargos sean definitivos.'}
-            </span>
-          </div>
-        )}
-      </section>
-
-      {deferralModalOpen && (
-        <div className="fixed inset-0 z-[72] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-base">{guaranteeCase.isClosed ? 'Actualizar seguimiento posterior' : 'Dejar pendiente del propietario'}</h3>
-                <p className="text-xs text-slate-300 mt-0.5">Gastos comunes/servicios Â· {formatCLP(servicesPending)}</p>
-              </div>
-              <button type="button" onClick={() => setDeferralModalOpen(false)} className="p-1 text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={registerServiceDeferral} className="p-6 space-y-4 text-xs">
-              <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 text-[11px] text-sky-950">
-                {guaranteeCase.isClosed ? 'Este seguimiento permanece activo aunque la garantÃ­a y el contrato estÃ©n cerrados. Actualiza cuÃ¡ndo y quiÃ©n debe revisarlo.' : 'La liquidaciÃ³n puede cerrarse sin registrar un pago ficticio. El saldo seguirÃ¡ visible como pendiente del propietario hasta que se cubra efectivamente.'}
-              </div>
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">Acuerdo / motivo *</label>
-                <textarea rows={3} required value={deferralReason} onChange={e => { setDeferralReason(e.target.value); setDeferralError(''); }} placeholder="Ej. Propietario solicita pagarlo cuando ingrese el prÃ³ximo arrendatario" className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">PrÃ³xima revisiÃ³n *</label>
-                  <input type="date" required value={deferralDate} onChange={e => { setDeferralDate(e.target.value); setDeferralError(''); }} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">Responsable *</label>
-                  <select required value={deferralResponsible} onChange={e => { setDeferralResponsible(e.target.value); setDeferralError(''); }} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5">
-                    <option value="">Seleccionar</option>
-                    {settings.responsiblesList.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </div>
-              </div>
-              {deferralError && <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[11px] font-semibold text-rose-800">{deferralError}</div>}
-              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
-                <button type="button" onClick={() => setDeferralModalOpen(false)} className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold cursor-pointer">Cancelar</button>
-                <button type="submit" className="px-5 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold rounded-lg cursor-pointer">Guardar pendiente</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {paymentModalOpen && (
-        <div className="fixed inset-0 z-[70] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 max-h-[92vh] overflow-y-auto">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between sticky top-0 z-10">
-              <div>
-                <h3 className="font-bold text-base">Registrar pago del propietario</h3>
-                <p className="text-xs text-slate-300 mt-0.5">{guaranteeCase.ownerName} Â· {guaranteeCase.id}</p>
-              </div>
-              <button type="button" onClick={() => setPaymentModalOpen(false)} className="p-1 text-slate-400 hover:text-white cursor-pointer">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={registerOwnerPayment} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-800 mb-1">Destino *</label>
-                <select
-                  value={paymentPurpose}
-                  onChange={e => changePaymentPurpose(e.target.value as OwnerPaymentPurpose)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5"
-                >
-                  {damagePending > 0 && <option value="REPARACIONES">Reparaciones Â· pendiente {formatCLP(damagePending)}</option>}
-                  {servicesPending > 0 && <option value="SERVICIOS">Gastos comunes y servicios Â· pendiente {formatCLP(servicesPending)}</option>}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">Monto *</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max={selectedPending}
-                    step="1"
-                    required
-                    value={paymentAmount}
-                    onChange={e => { setPaymentAmount(Number(e.target.value)); setPaymentError(''); }}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm font-bold font-mono text-blue-900"
-                  />
-                  <span className="text-[10px] text-slate-500 mt-0.5 block">MÃ¡ximo pendiente: {formatCLP(selectedPending)}</span>
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-800 mb-1">Fecha real del pago *</label>
-                  <input
-                    type="date"
-                    required
-                    value={paymentDate}
-                    onChange={e => { setPaymentDate(e.target.value); setPaymentError(''); }}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-800 mb-2">Modalidad *</label>
-                <div className="grid grid-cols-1 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('TRANSFERIDO_FAUNA')}
-                    className={`text-left p-3 rounded-xl border ${paymentMode === 'TRANSFERIDO_FAUNA' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'} cursor-pointer`}
-                  >
-                    <strong className="block text-slate-900">Transferido a Fauna</strong>
-                    <span className="text-[11px] text-slate-600">Fauna recibiÃ³ efectivamente los fondos para aplicarlos al caso.</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('PAGADO_DIRECTO')}
-                    className={`text-left p-3 rounded-xl border ${paymentMode === 'PAGADO_DIRECTO' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'} cursor-pointer`}
-                  >
-                    <strong className="block text-slate-900">Pagado directamente por el propietario</strong>
-                    <span className="text-[11px] text-slate-600">El propietario pagÃ³ al proveedor, administraciÃ³n u otro tercero. Fauna no recibiÃ³ ese dinero.</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Referencia / comprobante</label>
-                <input
-                  value={paymentReference}
-                  onChange={e => setPaymentReference(e.target.value)}
-                  placeholder="Ej. transferencia 12345, comprobante GC, factura proveedor..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Observaciones</label>
-                <textarea
-                  rows={2}
-                  value={paymentNotes}
-                  onChange={e => setPaymentNotes(e.target.value)}
-                  placeholder="InformaciÃ³n adicional del pago..."
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5"
-                />
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-[11px] text-blue-950">
-                <strong className="block">Este monto quedarÃ¡ como asumido por el propietario.</strong>
-                Si posteriormente paga el arrendatario, la distribuciÃ³n interna lo recuperarÃ¡ para el propietario antes de recuperar financiamiento Fauna.
-              </div>
-
-              {paymentError && (
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[11px] font-semibold text-rose-800">{paymentError}</div>
-              )}
-
-              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
-                <button type="button" onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold cursor-pointer">Cancelar</button>
-                <button type="submit" className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg cursor-pointer">Registrar pago</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
+      reference: paymentReference.trim() || `${paymentMode}-REPARACIONES-0‘íÕ…É…¹Ñ••…Í”¹¥‘ô´‘í…Ñ”¹¹½Ü ¥õ€°(€€€€€½‰Í•ÉÙ…Ñ¥½¸èm5½‘…±¥‘…è€‘íµ½‘•1…‰•±õ€°Á…åµ•¹Ñ9½Ñ•Ì¹ÑÉ¥´ ¥t¹™¥±Ñ•È¡	½½±•…¸¤¹©½¥¸ œƒ
+Ü€œ¤(€€€ô¤ì((€€€Í•ÑA…åµ•¹Ñ5½‘…±=Á•¸¡™…±Í”¤ì(€ôì((€¥˜€¡™¥¸¹‘…µ…•¡…É•Ì€ðô€À€˜˜™¥¸¹Í•ÉÙ¥•¡…É•Ì€ðô€À¤É•ÑÕÉ¸¹Õ±°ì((€É•ÑÕÉ¸€ (€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Áà´ÐÍ´éÁà´ØÁÐ´Ôµ…àµÜ´Ýá°µàµ…ÕÑ¼ˆø(€€€€€€ñÍ•Ñ¥½¸±…ÍÍ9…µ”ô‰‰œµ•µ•É…±´äÔÀÑ•áÐµÝ¡¥Ñ”É½Õ¹‘•´Éá°‰½É‘•È‰½É‘•Èµ•µ•É…±´äÀÀÍ¡…‘½ÜµÍ´ÀÐÍÁ…”µä´Ðˆø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµ½°Í´é™±•àµÉ½ÜÍ´é¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•ÑÝ••¸…À´Ìˆø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à¥Ñ•µÌµ•¹Ñ•È…À´Èˆø(€€€€€€€€€€€í¥ÍÕ±°€ü€ñM¡¥•±‘¡•¬±…ÍÍ9…µ”ô‰Ü´Ô ´ÔÑ•áÐµ•µ•É…±´ÌÀÀˆ€¼ø€è€ñ]…±±•Ñ…É‘Ì±…ÍÍ9…µ”ô‰Ü´Ô ´ÔÑ•áÐµ•µ•É…±´ÌÀÀˆ€¼ùô(€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€ñ Ì±…ÍÍ9…µ”ô‰™½¹Ðµ•áÑÉ…‰½±Ñ•áÐµÍ´ˆùÍµ¼Í”Õ‰É”•ÍÑ„Í…±¥‘„ð½ Ìø(€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµ•µ•É…±´ÈÀÀˆùI•ÍÕµ•¸‘”™½¹‘½Ì…Á±¥…‘½Ì…¹Ñ•Ì‘”½¹™¥Éµ…È±„±¥ÅÕ¥‘…§Í¸¸ð½Àø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Ñ•áÐµ±•™ÐÍ´éÑ•áÐµÉ¥¡Ðˆø(€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ•µ•É…±´ÌÀÀ‰±½¬ˆù9•Ñ¼…É½Ìä…‰½¹½Ìð½ÍÁ…¸ø(€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµá°™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼ˆùí™½Éµ…Ñ1@¡™¥¸¹Ñ½Ñ…±¡…É•Ì¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€ð½‘¥Øø((€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Èˆø(€€€€€€€€€í™¥¸¹‘…µ…•¡…É•Ì€ø€À€˜˜€ (€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÝ¡¥Ñ”¼ÄÀÉ½Õ¹‘•µá°‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀÀÌ™±•à™±•àµ½°±œé™±•àµÉ½Ü±œé¥Ñ•µÌµ•¹Ñ•È…À´Ì±œé…À´Ôˆø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ØÐÍ¡É¥¹¬´Àˆø(€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ•µ•É…±´ÈÀÀ‰±½¬ˆøÄ¸‡Å½ÌäÉ•Á…É…¥½¹•Ìð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ±œ™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼ˆùí™½Éµ…Ñ1@¡™¥¸¹‘…µ…•¡…É•Ì¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à´Ä™±•à™±•àµÝÉ…À¥Ñ•µÌµ•¹Ñ•È…À´ÈÑ•áÐµlÄÅÁátˆø(€€€€€€€€€€€€€€€í™¥¸¹Õ…É…¹Ñ••½É…µ…”€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµÝ¡¥Ñ”¼ÄÀ‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀˆù…É…¹Óµ„€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹Õ…É…¹Ñ••½É…µ…”¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€í¥ÍÕ±°€˜˜™¥¸¹™Õ±±½Ù•É…•ÁÁ±¥•€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµ•µ•É…±´ÜÀÀ¼ÐÀ‰½É‘•È‰½É‘•Èµ•µ•É…±´ÔÀÀ¼ÌÀˆùA±…¸Õ±°€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹™Õ±±½Ù•É…•ÁÁ±¥•¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€í™¥¸¹É•‘¥ÑÍ½É…µ…”€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµå…¸´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµå…¸´ÌÀÀ¼ÈÀˆùá•‘•¹Ñ”…‰½¹¼€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹É•‘¥ÑÍ½É…µ…”¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€í½Ý¹•ÉAÉ½Ù¥Í¥½¹½É…µ…”€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµ‰±Õ”´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ‰±Õ”´ÌÀÀ¼ÈÀˆùAÉ½Á¥•Ñ…É¥¼€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡½Ý¹•ÉAÉ½Ù¥Í¥½¹½É…µ…”¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ÐàÍ¡É¥¹¬´À±œéÑ•áÐµÉ¥¡Ðˆø(€€€€€€€€€€€€€€€í‘…µ…•A•¹‘¥¹œ€ôôô€À€ü€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È…À´Ä¸ÔÑ•áÐµ•µ•É…±´ÈÀÀÑ•áÐµáÌ™½¹Ðµ•áÑÉ…‰½±ˆøñ¡•­¥É±”È±…ÍÍ9…µ”ô‰Ü´Ð ´Ðˆ€¼øI•Á…É…¥½¹•ÌÕ‰¥•ÉÑ…Ìð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ…µ‰•È´ÈÀÀ‰±½¬ˆù…±Ñ„Á…É„É•Á…É…Èð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ‰…Í”™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼Ñ•áÐµ…µ‰•È´ÄÀÀˆùí™½Éµ…Ñ1@¡‘…µ…•A•¹‘¥¹œ¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€¥ô((€€€€€€€€€í™¥¸¹Í•ÉÙ¥•¡…É•Ì€ø€À€˜˜€ (€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÝ¡¥Ñ”¼ÄÀÉ½Õ¹‘•µá°‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀÀ´Ì™±•à™±•àµ½°±œé™±•àµÉ½Ü±œé¥Ñ•µÌµ•¹Ñ•È…À´Ì±œé…À´Ôˆø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ØÐÍ¡É¥¹¬´Àˆø(€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ•µ•É…±´ÈÀÀ‰±½¬ˆøÈ¸…ÍÑ½Ì½µÕ¹•ÌäÍ•ÉÙ¥¥½Ìð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ±œ™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼ˆùí™½Éµ…Ñ1@¡™¥¸¹Í•ÉÙ¥•¡…É•Ì¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à´Ä™±•à™±•àµÝÉ…À¥Ñ•µÌµ•¹Ñ•È…À´ÈÑ•áÐµlÄÅÁátˆø(€€€€€€€€€€€€€€€í™¥¸¹Õ…É…¹Ñ••½ÉM•ÉÙ¥•Ì€ø€À€ü€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµÝ¡¥Ñ”¼ÄÀ‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀˆù…É…¹Óµ„Í½‰É…¹Ñ”€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹Õ…É…¹Ñ••½ÉM•ÉÙ¥•Ì¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµÝ¡¥Ñ”¼Ô‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀÑ•áÐµ•µ•É…±´ÈÀÀˆùM¥¸…É…¹Óµ„‘¥ÍÁ½¹¥‰±”ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€í™¥¸¹É•‘¥ÑÍ½ÉM•ÉÙ¥•Ì€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµå…¸´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµå…¸´ÌÀÀ¼ÈÀˆù‰½¹¼ÁÉ½Á½É¥½¹…°€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹É•‘¥ÑÍ½ÉM•ÉÙ¥•Ì¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€€íÉ•…‘¥¹•ÍÌ¹½Ý¹•ÉM•ÉÙ¥•Õ¹‘•‘Q½Ñ…°€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµ‰±Õ”´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ‰±Õ”´ÌÀÀ¼ÈÀˆùA……‘¼Á½ÈÁÉ½Á¥•Ñ…É¥¼€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡É•…‘¥¹•ÍÌ¹½Ý¹•ÉM•ÉÙ¥•Õ¹‘•‘Q½Ñ…°¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ÐàÍ¡É¥¹¬´À±œéÑ•áÐµÉ¥¡Ðˆø(€€€€€€€€€€€€€€€íÍ•ÉÙ¥•Í%¹™½Éµ…Ñ¥½¹…°€ø€À€ü€ (€€€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ…µ‰•È´ÈÀÀ‰±½¬ˆù…É¼‘•°ÁÉ½Á¥•Ñ…É¥¼ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ‰…Í”™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼Ñ•áÐµ…µ‰•È´ÄÀÀˆùí™½Éµ…Ñ1@¡Í•ÉÙ¥•Í%¹™½Éµ…Ñ¥½¹…°¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È…À´Ä¸ÔÑ•áÐµ•µ•É…±´ÈÀÀÑ•áÐµáÌ™½¹Ðµ•áÑÉ…‰½±ˆøñ¡•­¥É±”È±…ÍÍ9…µ”ô‰Ü´Ð ´Ðˆ€¼øM¥¸Í…±‘¼ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€¥ô(€€€€€€€€ð½‘¥Øø((€€€€€€€í‘…µ…•A•¹‘¥¹œ€ø€À€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµ…µ‰•È´ÌÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ…µ‰•È´ÌÀÀ¼ÌÀÉ½Õ¹‘•µá°ÀÌ™±•à™±•àµ½°µé™±•àµÉ½Üµé¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•ÑÝ••¸…À´Ìˆø(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµ…µ‰•È´ÄÀÀˆø(€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰‰±½¬Ñ•áÐµáÌˆù…±Ñ…¸í™½Éµ…Ñ1@¡‘…µ…•A•¹‘¥¹œ¥ôÁ…É„Õ‰É¥È±…ÌÉ•Á…É…¥½¹•Ì¸ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰‰±½¬µÐ´À¸ÔˆùÍÑ”µ½¹Ñ¼Ï´‘•‰”•ÍÑ…È•™•Ñ¥Ù…µ•¹Ñ”…ÍÕµ¥‘¼…¹Ñ•Ì‘”½¹™¥Éµ…È±„±¥ÅÕ¥‘…§Í¸¸ð½ÍÁ…¸ø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õí½Á•¹I•Á…¥ÉA…åµ•¹Ñô±…ÍÍ9…µ”ô‰Í¡É¥¹¬´ÀÁà´ÐÁä´ÈÉ½Õ¹‘•µá°‰œµÝ¡¥Ñ”Ñ•áÐµ•µ•É…±´äÔÀ¡½Ù•Èé‰œµ•µ•É…°´ÔÀÑ•áÐµáÌ™½¹Ðµ•áÑÉ…‰½±¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ•¹Ñ•È…À´Ä¸ÔÕÉÍ½ÈµÁ½¥¹Ñ•Èˆø(€€€€€€€€€€€€€€ñ	…¹­¹½Ñ”±…ÍÍ9…µ”ô‰Ü´Ð ´Ðˆ€¼øI•¥ÍÑÉ…È…Á½ÉÑ”Á…É„É•Á…É…¥½¹•Ì(€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€¥ô((€€€€€€€í‘…µ…•A•¹‘¥¹œ€ôôô€À€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµ•µ•É…±´ÌÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ•µ•É…±´ÌÀÀ¼ÌÀÉ½Õ¹‘•µá°Áà´ÌÁä´ÈÑ•áÐµlÄÅÁátÑ•áÐµ•µ•É…±´ÄÀÀ™±•à¥Ñ•µÌµ•¹Ñ•È…À´Èˆø(€€€€€€€€€€€€ñ¡•­¥É±”È±…ÍÍ9…µ”ô‰Ü´Ð ´ÐÍ¡É¥¹¬´Àˆ€¼ø(€€€€€€€€€€€€ñÍÑÉ½¹œù1…ÌÉ•Á…É…¥½¹•Ì•ÍÓ…¸Õ‰¥•ÉÑ…Ì¸ð½ÍÑÉ½¹œø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€¥ô(€€€€€€ð½Í•Ñ¥½¸ø((€€€€€íÁ…åµ•¹Ñ5½‘…±=Á•¸€˜˜€ (€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™¥á•¥¹Í•Ð´ÀèµlÜÁt‰œµÍ±…Ñ”´äÀÀ¼ØÔ‰…­‘É½Àµ‰±ÕÈµáÌ™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ•¹Ñ•ÈÀ´Ðˆø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÝ¡¥Ñ”Ñ•áÐµÍ±…Ñ”´àÀÀÉ½Õ¹‘•´Éá°Í¡…‘½Ü´Éàµ…àµÜµ±œÝ™Õ±°½Ù•É™±½Üµ¡¥‘‘•¸‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÈÀÀˆø(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÍ±…Ñ”´äÀÀÑ•áÐµÝ¡¥Ñ”ÀÔ™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•ÑÝ••¸ˆø(€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ Ì±…ÍÍ9…µ”ô‰™½¹Ðµ‰½±Ñ•áÐµ‰…Í”ˆùI•¥ÍÑÉ…È…Á½ÉÑ”‘•°ÁÉ½Á¥•Ñ…É¥¼ð½ Ìø(€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµáÌÑ•áÐµÍ±…Ñ”´ÌÀÀµÐ´À¸ÔˆùI•Á…É…¥½¹•Ìƒ
+Üí™½Éµ…Ñ1@¡‘…µ…•A•¹‘¥¹œ¥ôð½Àø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘…±=Á•¸¡™…±Í”¥ô±…ÍÍ9…µ”ô‰À´ÄÑ•áÐµÍ±…Ñ”´ÐÀÀ¡½Ù•ÈéÑ•áÐµÝ¡¥Ñ”ÕÉÍ½ÈµÁ½¥¹Ñ•Èˆø(€€€€€€€€€€€€€€€€ñ`±…ÍÍ9…µ”ô‰Ü´Ô ´Ôˆ€¼ø(€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€ñ™½É´½¹MÕ‰µ¥ÐõíÉ•¥ÍÑ•É=Ý¹•ÉI•Á…¥ÉA…åµ•¹Ñô±…ÍÍ9…µ”ô‰ÀØÍÁ…”µä´ÐÑ•áÐµáÌˆø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥É¥µ½±Ì´ÄÍ´éÉ¥µ½±Ì´È…À´Ìˆø(€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹Ðµ‰½±Ñ•áÐµÍ±…Ñ”´àÀÀµˆ´Äˆù5½¹Ñ¼€¨ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐÑåÁ”ô‰¹Õµ‰•Èˆµ¥¸ôˆÄˆµ…àõí‘…µ…•A•¹‘¥¹ôÍÑ•ÀôˆÄˆÉ•ÅÕ¥É•Ù…±Õ”õíÁ…åµ•¹Ñµ½Õ¹Ñô½¹¡…¹”õí”€ôøìÍ•ÑA…åµ•¹Ñµ½Õ¹Ð¡9Õµ‰•È¡”¹Ñ…É•Ð¹Ù…±Õ”¤¤ìÍ•ÑA…åµ•¹ÑÉÉ½È œœ¤ìõô±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀ´È¸ÔÑ•áÐµÍ´™½¹Ðµ‰½±™½¹Ðµµ½¹¼ˆ€¼ø(€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹Ðµ‰½±Ñ•áÐµÍ±…Ñ”´àÀÀµˆ´Äˆù•¡„É•…°‘•°Á…¼€¨ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐÑåÁ”ô‰‘…Ñ”ˆÉ•ÅÕ¥É•Ù…±Õ”õíÁ…åµ•¹Ñ…Ñ•ô½¹¡…¹”õí”€ôøìÍ•ÑA…åµ•¹Ñ…Ñ”¡”¹Ñ…É•Ð¹Ù…±Õ”¤ìÍ•ÑA…åµ•¹ÑÉÉ½È œœ¤ìõô±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀ´È¸Ôˆ€¼ø(€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹Ðµ‰½±Ñ•áÐµÍ±…Ñ”´àÀÀµˆ´Èˆù5½‘…±¥‘…€¨ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥É¥µ½±Ì´Ä…À´Èˆø(€€€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘” QI9MI%=}U9œ¥ô±…ÍÍ9…µ”õíÑ•áÐµ±•™ÐÀ´ÌÉ½Õ¹‘•µá°‰½É‘•È€‘íÁ…åµ•¹Ñ5½‘”€ôôô€QI9MI%=}U9œ€ü€‰½É‘•Èµ•µ•É…±´ÔÀÀ‰œµ•µ•É…°´ÔÀœ€è€‰½É‘•ÈµÍ±…Ñ”´ÈÀÀ‰œµÝ¡¥Ñ”ôÕÉÍ½ÈµÁ½¥¹Ñ•Éôø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰‰±½¬Ñ•áÐµÍ±…Ñ”´äÀÀˆùQÉ…¹Í™•É¥‘¼„…Õ¹„ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµÍ±…Ñ”´ØÀÀˆù…Õ¹„É•¥‰§Ì•™•Ñ¥Ù…µ•¹Ñ”±½Ì™½¹‘½ÌÁ…É„•©•ÕÑ…È±„É•Á…É…§Í¸¸ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘” A=}%IQ<œ¥ô±…ÍÍ9…µ”õíÑ•áÐµ±•™ÐÀ´ÌÉ½Õ¹‘•µá°‰½É‘•È€‘íÁ…åµ•¹Ñ5½‘”€ôôô€A=}%IQ<œ€ü€‰½É‘•Èµ•µ•É…±´ÔÀÀ‰œµ•µ•É…°´ÔÀœ€è€‰½É‘•ÈµÍ±…Ñ”´ÈÀÀ‰œµÝ¡¥Ñ”ôÕÉÍ½ÈµÁ½¥¹Ñ•Éôø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰‰±½¬Ñ•áÐµÍ±…Ñ”´äÀÀˆùA……‘¼‘¥É•Ñ…µ•¹Ñ”ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµÍ±…Ñ”´ØÀÀˆù°ÁÉ½Á¥•Ñ…É¥¼Á…ŸÌ‘¥É•Ñ…µ•¹Ñ”…°ÁÉ½Ù••‘½È¸…Õ¹„¹¼É•¥‰§Ì•Í”‘¥¹•É¼¸ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹ÐµÍ•µ¥‰½±Ñ•áÐµÍ±…Ñ”´ÜÀÀµˆ´ÄˆùI•™•É•¹¥„€¼½µÁÉ½‰…¹Ñ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐÙ…±Õ”õíÁ…åµ•¹ÑI•™•É•¹•ô½¹¡…¹”õí”€ôøÍ•ÑA…åµ•¹ÑI•™•É•¹”¡”¹Ñ…É•Ð¹Ù…±Õ”¥ôÁ±…•¡½±‘•Èô‰¨¸ÑÉ…¹Í™•É•¹¥„€ÄÈÌÐÔ°™…ÑÕÉ„ÁÉ½Ù••‘½È¸¸¸ˆ±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀÈ¸Ôˆ€¼ø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹ÐµÍ•µ¥‰½±Ñ•áÐµÍ±…Ñ”´ÜÀÀµˆ´Äˆù=‰Í•ÉÙ…¥½¹•Ìð½±…‰•°ø(€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„É½ÝÌõìÉôÙ…±Õ”õíÁ…åµ•¹Ñ9½Ñ•Íô½¹¡…¹”õí”€ôøÍ•ÑA…åµ•¹Ñ9½Ñ•Ì¡”¹Ñ…É•Ð¹Ù…±Õ”¥ô±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀ´È¸Ôˆ€¼ø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€íÁ…åµ•¹ÑÉÉ½È€˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÉ½Í”´ÔÀ‰½É‘•È‰½É‘•ÈµÉ½Í”´ÈÀÀÉ½Õ¹‘•µá°ÀÌÑ•áÐµlÄÅÁát™½¹ÐµÍ•µ¥‰½±Ñ•áÐµÉ½Í”´àÀÀˆùíÁ…åµ•¹ÑÉÉ½Éôð½‘¥Øùô((€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÁÐ´Ì‰½É‘•ÈµÐ‰½É‘•ÈµÍ±…Ñ”´ÄÀÀ™±•à©ÕÍÑ¥™äµ•¹…À´Èˆø(€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘…±=Á•¸¡™…±Í”¥ô±…ÍÍ9…µ”ô‰Áà´ÐÁä´È‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÑ•áÐµÍ±…Ñ”´ØÀÀÉ½Õ¹‘•µ±œ™½¹ÐµÍ•µ¥‰½±ÕÉÍ½ÈµÁ½¥¹Ñ•Èˆù…¹•±…Èð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ±…ÍÍ9…µ”ô‰Áà´ÔÁä´È‰œµ•µ•É…±´ÜÀÀ¡½Ù•Èé‰œµ•µ•É…±´àÀÀÑ•áÐµÝ¡¥Ñ”™½¹Ðµ‰½±É½Õ¹‘•µ±œÕÉÍ½ÈµÁ½¥¹Ñ•ÈˆùI•¥ÍÑÉ…È…Á½ÉÑ”ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€ð½‘¥Øø(€€€€€€¥ô(€€€€ð½‘¥Øø(€€¤ì)ôì
