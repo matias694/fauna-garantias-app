@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import type { GuaranteeCase, Charge, AdministrationPlan, LiquidationRequirement } from '../types';
 
-const RESET_MARKER = 'fauna_guarantees_demo_v3_reset_done';
+const RESET_MARKER = 'fauna_guarantees_demo_v4_reset_done';
 
 const requirements = (id: string): LiquidationRequirement[] => [
   { id: `${id}-R1`, name: 'Presupuesto reparaciones', status: 'COMPLETO' },
@@ -112,7 +112,7 @@ const makeCase = (input: CaseInput): GuaranteeCase => ({
     description: 'Ingreso inicial de garantía en custodia',
     amount: input.guarantee,
     user: 'Gestor de Liquidaciones',
-    reference: 'QA-V3',
+    reference: 'QA-V4',
     observation: 'Caso limpio creado para probar la versión actual'
   }],
   ownerContribution: 0,
@@ -122,7 +122,7 @@ const makeCase = (input: CaseInput): GuaranteeCase => ({
   isClosed: false
 });
 
-const freshCases: GuaranteeCase[] = [
+export const freshCases: GuaranteeCase[] = [
   makeCase({
     id: 'GAR-0001',
     address: 'Los Leones 1450', comuna: 'Providencia', unit: 'Depto 402', plan: 'ESTANDAR', guarantee: 520000,
@@ -177,18 +177,12 @@ const freshCases: GuaranteeCase[] = [
 ];
 
 /**
- * Reset transitorio de QA. Se ejecuta una sola vez por navegador después de esta versión.
- * Borra estados heredados y carga siete casos coherentes con las reglas actuales.
+ * Compatibilidad transitoria para builds que todavía monten este componente.
+ * La fuente real de los casos QA v4 ahora se carga directamente desde AppContext.
  */
 export const DemoDataV3Reset: React.FC = () => {
   useEffect(() => {
-    if (localStorage.getItem(RESET_MARKER) === '1') return;
-
-    localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(freshCases));
-    localStorage.setItem('fauna_receivables_v2', JSON.stringify([]));
-    localStorage.setItem('fauna_audit_logs_v2', JSON.stringify([]));
     localStorage.setItem(RESET_MARKER, '1');
-    window.location.reload();
   }, []);
 
   return null;
