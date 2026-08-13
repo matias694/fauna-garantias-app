@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { GuaranteeCase, SystemSettings } from '../types';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
 import { formatDate, getLocalDateInputValue, parseLocalDate } from '../utils/formatters';
-import { isCaseCompleted } from '../context/AppContext';
+import { isCaseCompleted, normalizeClosedOwnerPending } from '../context/AppContext';
 
 const settings = {
   maxLiquidationDays: 60,
@@ -196,4 +196,23 @@ assert.equal(getLocalDateInputValue(localSample), '2026-08-12');
 assert.equal(parseLocalDate('2026-08-12')?.getDate(), 12);
 assert.equal(formatDate('2026-08-12T03:00:00.000Z'), '12/08/2026');
 
-console.log('✓ Reglas de hardening, fechas, incobrables y seguimiento posterior validadas');
+const legacyClosedDeferred = {
+  ...ownerServicesPending,
+  isClosed: true,
+  closedBy: 'ADMINISTRADOR',
+  ownerServiceDeferral: {
+    amountAtDeferral: 200000,
+    reason: 'Pagar al próximo arriendo',
+    nextReviewDate: '15/09/2026',
+    responsible: 'Usuario',
+    createdAt: '2026-08-12T01:00:00.000Z',
+    createdBy: 'ADMINISTRADOR'
+  }
+};
+const migratedClosed = normalizeClosedOwnerPending(legacyClosedDeferred);
+assert.equal(migratedClosed.ownerServiceDeferral, undefined);
+assert.equal(migratedClosed.ownerPostClosePending?.amountAtTransfer, 200000);
+assert.equal(migratedClosed.ownerPostClosePending?.status, 'PENDIENTE');
+assert.equal(isCaseCompleted(migratedClosed, settings), true);
+
+console.log('✓ Reglas de hardening, fechas, migraciones, incobrables y seguimiento posterior validadas');

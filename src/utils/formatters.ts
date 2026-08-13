@@ -82,8 +82,9 @@ export function calculateDaysDifference(fromDateStr: string, toDateStr?: string)
   const toDate = toDateStr ? parseLocalDate(toDateStr) : new Date();
   if (!toDate) return 0;
 
-  const diffTime = toDate.getTime() - fromDate.getTime();
-  return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const fromCalendarDay = Date.UTC(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  const toCalendarDay = Date.UTC(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+  return Math.floor((toCalendarDay - fromCalendarDay) / (1000 * 60 * 60 * 24));
 }
 
 export function addDaysToDate(dateStr: string, days: number): string {

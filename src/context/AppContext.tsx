@@ -19,7 +19,7 @@ import {
   TenantRefund
 } from '../types';
 import { initialGuaranteeCases, initialReceivables, initialSettings, defaultRequirements } from '../data/initialData';
-import { addDaysToDate, formatDate, getLocalDateInputValue } from '../utils/formatters';
+import { addDaysToDate, formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
 import {
   calculateFundingReadiness,
   calculateGuaranteeFinances,
@@ -64,6 +64,28 @@ const normalizeFinancialLedger = (c: GuaranteeCase): GuaranteeCase => {
   });
 
   return { ...c, movements };
+};
+
+
+export const normalizeClosedOwnerPending = (c: GuaranteeCase): GuaranteeCase => {
+  if (!c.isClosed || c.ownerPostClosePending || !c.ownerServiceDeferral) return c;
+
+  const readiness = calculateFundingReadiness(c, initialSettings);
+  if (readiness.ownerServicePending <= 0) return c;
+
+  return {
+    ...c,
+    ownerPostClosePending: {
+      amountAtTransfer: readiness.ownerServicePending,
+      reason: c.ownerServiceDeferral.reason,
+      nextReviewDate: c.ownerServiceDeferral.nextReviewDate,
+      responsible: c.ownerServiceDeferral.responsible,
+      transferredAt: c.ownerServiceDeferral.createdAt,
+      transferredBy: c.closedBy || c.ownerServiceDeferral.createdBy,
+      status: 'PENDIENTE'
+    },
+    ownerServiceDeferral: undefined
+  };
 };
 
 export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = initialSettings): boolean {
@@ -150,7 +172,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         return JSON.parse(saved).map((raw: GuaranteeCase) => {
-          const c = normalizeFinancialLedger(raw);
+          const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
           return { ...c, isCompleted: isCaseCompleted(c) };
         });
       } catch (e) {
@@ -158,7 +180,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return initialGuaranteeCases.map(raw => {
-      const c = normalizeFinancialLedger(raw);
+      const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
       return { ...c, isCompleted: isCaseCompleted(c) };
     });
   });
@@ -895,7 +917,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdBy: pendingPostClose.transferredBy
       } : c.ownerServiceDeferral,
       ownerPostClosePending: pendingPostClose ? undefined : c.ownerPostClosePending,
-      nextManagement: pendingPostClose ? `Revisar pendiente propietario de ${readiness.ownerServicePending}` : c.nextManagement,
+      nextManagement: pendingPostClose ? `Revisar pendiente propietario de ${formatCLP(readiness.ownerServicePending)}` : c.nextManagement,
       nextManagementDate: pendingPostClose ? pendingPostClose.nextReviewDate : c.nextManagementDate,
       nextManagementResponsible: pendingPostClose ? pendingPostClose.responsible : c.nextManagementResponsible
     }) : c));
