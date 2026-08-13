@@ -294,7 +294,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
               </div>
               {guaranteeCase.refund?.status !== 'TRANSFERIDA' && (
                 <button onClick={() => setIsRefundModalOpen(true)} className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer">
-                  <Banknote className="w-4 h-4" /> Registrar transferencia
+                  <Banknote className="w-4 h-4" /> Registrar devolución
                 </button>
               )}
             </div>
@@ -357,21 +357,18 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
             <div className="p-5 space-y-4 text-xs">
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Resultado al confirmar</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Resultado</span>
                 <strong className="text-base text-slate-900 block mt-1">{projectedResult}</strong>
               </div>
               <p className="text-slate-600 leading-relaxed">
-                Al confirmar se creará una versión inmutable de esta liquidación. Los cambios futuros de fórmulas o cobranzas posteriores no modificarán el documento emitido.
-              </p>
-              <p className="text-slate-500 leading-relaxed">
-                Un saldo pendiente del propietario por gastos comunes o servicios puede mantenerse después de confirmar y no bloquea la liquidación.
+                Al confirmar, la liquidación quedará emitida y sus montos no podrán modificarse.
               </p>
             </div>
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
               <button type="button" onClick={() => setShowConfirmModal(false)} className="px-4 py-2 border border-slate-300 text-slate-700 font-bold rounded-xl cursor-pointer">Cancelar</button>
               <button type="button" onClick={confirmLiquidation} className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5" /> Confirmar definitivamente
+                <Lock className="w-3.5 h-3.5" /> Confirmar liquidación
               </button>
             </div>
           </div>
@@ -381,7 +378,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
       {isRefundModalOpen && isConfirmed && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-xl space-y-4">
-            <h3 className="font-bold text-base text-slate-900 border-b border-slate-100 pb-2">Registrar transferencia de devolución</h3>
+            <h3 className="font-bold text-base text-slate-900 border-b border-slate-100 pb-2">Registrar devolución</h3>
             <form onSubmit={handleRegisterRefundSubmit} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Monto</label>
@@ -405,7 +402,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
               </div>
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button type="button" onClick={() => setIsRefundModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl cursor-pointer">Confirmar transferencia</button>
+                <button type="submit" className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl cursor-pointer">Confirmar devolución</button>
               </div>
             </form>
           </div>
