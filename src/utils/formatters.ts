@@ -1,5 +1,5 @@
 /**
- * Utility functions for formatting CLP currency and DD/MM/AAAA dates
+ * Utility functions for formatting CLP currency and DD/MM/AAAA dates.
  */
 
 export function formatCLP(amount: number | undefined | null): string {
@@ -12,33 +12,63 @@ export function formatCLP(amount: number | undefined | null): string {
   return isNegative ? `-$${formatted}` : `$${formatted}`;
 }
 
-export function formatDate(dateString: string | undefined | null): string {
-  if (!dateString) return '-';
-  
-  // If already in DD/MM/YYYY format
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
-    return dateString;
+/** Fecha calendario local en formato YYYY-MM-DD para inputs HTML.
+ * Evita usar toISOString(), que convierte a UTC y puede adelantar/atrasar un día.
+ */
+export function getLocalDateInputValue(date: Date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Interpreta fechas de calendario sin pasar YYYY-MM-DD por UTC.
+ * Los timestamps completos conservan su instante real.
+ */
+export function parseLocalDate(dateString: string | undefined | null): Date | null {
+  if (!dateString) return null;
+
+  const cl = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (cl) {
+    const [, day, month, year] = cl;
+    const d = new Date(Number(year), Number(month) - 1, Number(day));
+    return isNaN(d.getTime()) ? null : d;
   }
 
-  try {
-    const [year, month, day] = dateString.split('-');
-    if (year && month && day) {
-      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
-    }
-    const d = new Date(dateString);
-    if (isNaN(d.getTime())) return dateString;
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}/${mm}/${yyyy}`;
-  } catch {
-    return dateString;
+  const input = dateString.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (input) {
+    const [, year, month, day] = input;
+    const d = new Date(Number(year), Number(month) - 1, Number(day));
+    return isNaN(d.getTime()) ? null : d;
   }
+
+  const parsed = new Date(dateString);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function formatDate(dateString: string | undefined | null): string {
+  if (!dateString) return '-';
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) return dateString;
+
+  const isoDate = dateString.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+  if (isoDate) {
+    const [, year, month, day] = isoDate;
+    return `${day}/${month}/${year}`;
+  }
+
+  const d = parseLocalDate(dateString);
+  if (!d) return dateString;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 export function parseFormattedDateToInput(ddmmyyyy: string): string {
   if (!ddmmyyyy) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(ddmmyyyy)) return ddmmyyyy;
+  if (/^\d{4}-\d{2}-\d{2}(?:$|T)/.test(ddmmyyyy)) return ddmmyyyy.slice(0, 10);
   const parts = ddmmyyyy.split('/');
   if (parts.length === 3) {
     return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
@@ -47,40 +77,18 @@ export function parseFormattedDateToInput(ddmmyyyy: string): string {
 }
 
 export function calculateDaysDifference(fromDateStr: string, toDateStr?: string): number {
-  if (!fromDateStr) return 0;
-  const fromParts = fromDateStr.includes('/') ? fromDateStr.split('/') : fromDateStr.split('-');
-  let fromDate: Date;
-  if (fromDateStr.includes('/')) {
-    fromDate = new Date(parseInt(fromParts[2]), parseInt(fromParts[1]) - 1, parseInt(fromParts[0]));
-  } else {
-    fromDate = new Date(parseInt(fromParts[0]), parseInt(fromParts[1]) - 1, parseInt(fromParts[2]));
-  }
-
-  let toDate = new Date();
-  if (toDateStr) {
-    const toParts = toDateStr.includes('/') ? toDateStr.split('/') : toDateStr.split('-');
-    if (toDateStr.includes('/')) {
-      toDate = new Date(parseInt(toParts[2]), parseInt(toParts[1]) - 1, parseInt(toParts[0]));
-    } else {
-      toDate = new Date(parseInt(toParts[0]), parseInt(toParts[1]) - 1, parseInt(toParts[2]));
-    }
-  }
+  const fromDate = parseLocalDate(fromDateStr);
+  if (!fromDate) return 0;
+  const toDate = toDateStr ? parseLocalDate(toDateStr) : new Date();
+  if (!toDate) return 0;
 
   const diffTime = toDate.getTime() - fromDate.getTime();
   return Math.floor(diffTime / (1000 * 60 * 60 * 24));
 }
 
 export function addDaysToDate(dateStr: string, days: number): string {
-  let d: Date;
-  if (dateStr.includes('/')) {
-    const parts = dateStr.split('/');
-    d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-  } else if (dateStr.includes('-')) {
-    const parts = dateStr.split('-');
-    d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-  } else {
-    d = new Date();
-  }
+  const parsed = parseLocalDate(dateStr);
+  const d = parsed ? new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()) : new Date();
 
   d.setDate(d.getDate() + days);
   const dd = String(d.getDate()).padStart(2, '0');
