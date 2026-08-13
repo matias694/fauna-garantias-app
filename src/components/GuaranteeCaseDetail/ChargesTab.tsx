@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, ChargeCategory, ChargeType, Charge, RepairStatus } from '../../types';
-import { formatCLP, formatDate, parseFormattedDateToInput } from '../../utils/formatters';
+import { formatCLP, formatDate, parseFormattedDateToInput, getLocalDateInputValue } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
 import { DollarSign, Plus, Minus, Trash2, Edit2, Paperclip, Lock, Wrench, AlertTriangle } from 'lucide-react';
 
@@ -67,7 +67,7 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
     settings
   } = useApp();
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateInputValue();
   const isConfirmed = guaranteeCase.liquidationStatus === 'EMITIDA';
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
 

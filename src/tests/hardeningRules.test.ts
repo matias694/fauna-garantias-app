@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import type { GuaranteeCase, SystemSettings } from '../types';
-import { calculateGuaranteeFinances } from '../utils/calculations';
+import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
+import { formatDate, getLocalDateInputValue, parseLocalDate } from '../utils/formatters';
 import { isCaseCompleted } from '../context/AppContext';
 
 const settings = {
@@ -151,4 +152,48 @@ assert.equal(isCaseCompleted({
   }
 }, settings), true);
 
-console.log('✓ Reglas de hardening, cargos, diferimiento y seguimiento posterior propietario validadas');
+// Un seguimiento posterior no puede completar por sí solo una garantía reabierta.
+const postCloseOnly = {
+  ...ownerServicesPending,
+  isClosed: false,
+  ownerPostClosePending: {
+    amountAtTransfer: 200000,
+    reason: 'Pendiente previo',
+    nextReviewDate: '15/09/2026',
+    responsible: 'Usuario',
+    transferredAt: '2026-08-12T03:00:00.000Z',
+    transferredBy: 'ADMINISTRADOR',
+    status: 'PENDIENTE' as const
+  }
+};
+assert.equal(isCaseCompleted(postCloseOnly, settings), false);
+
+// Si la cobranza ya es incobrable y el propietario asume servicios, el pago cubre
+// la obligación operativa aunque no quede un monto recuperable para el propietario.
+const ownerCostAfterWriteOff = {
+  ...ownerServicesPending,
+  ownerContribution: 0,
+  movements: [
+    {
+      id: 'MOV-PROP-POST', caseId: ownerServicesPending.id, date: '12/08/2026', time: '10:00',
+      type: 'APORTE_PROPIETARIO' as const, ownerPaymentPurpose: 'SERVICIOS' as const,
+      ownerPaymentMode: 'PAGADO_DIRECTO' as const, description: 'Pago servicios', amount: 200000,
+      user: 'Usuario', reference: 'POST', observation: ''
+    },
+    {
+      id: 'MOV-CAST-POST', caseId: ownerServicesPending.id, date: '12/08/2026', time: '10:00',
+      type: 'CASTIGO_PROPIETARIO' as const, description: 'Costo definitivo propietario', amount: 200000,
+      user: 'Usuario', reference: 'CAST', observation: ''
+    }
+  ]
+};
+assert.equal(calculateFundingReadiness(ownerCostAfterWriteOff, settings).ownerServicePending, 0);
+assert.equal(isCaseCompleted(ownerCostAfterWriteOff, settings), true);
+
+// Fechas de calendario: YYYY-MM-DD se interpreta localmente y los ISO completos se formatean bien.
+const localSample = new Date(2026, 7, 12, 23, 30, 0);
+assert.equal(getLocalDateInputValue(localSample), '2026-08-12');
+assert.equal(parseLocalDate('2026-08-12')?.getDate(), 12);
+assert.equal(formatDate('2026-08-12T03:00:00.000Z'), '12/08/2026');
+
+console.log('✓ Reglas de hardening, fechas, incobrables y seguimiento posterior validadas');

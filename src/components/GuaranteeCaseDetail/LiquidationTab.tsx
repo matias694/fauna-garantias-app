@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
-import { formatCLP } from '../../utils/formatters';
+import { formatCLP, getLocalDateInputValue } from '../../utils/formatters';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
 import { CheckCircle2, AlertTriangle, FileText, Plus, Banknote, Lock, Clock3, X } from 'lucide-react';
@@ -28,7 +28,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
-  const [refundDate, setRefundDate] = useState(new Date().toISOString().split('T')[0]);
+  const [refundDate, setRefundDate] = useState(getLocalDateInputValue());
   const [refundVoucher, setRefundVoucher] = useState('');
   const [refundAccount, setRefundAccount] = useState(guaranteeCase.refund?.destinationAccount || '');
   const [refundNotes, setRefundNotes] = useState('');

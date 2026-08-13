@@ -266,11 +266,14 @@ export interface LiquidationSnapshotFinancials {
 }
 
 export interface LiquidationSnapshot {
-  calculationVersion: '2026-08-v1';
+  calculationVersion: '2026-08-v1' | '2026-08-v2';
   issuedAt: string;
   issuedDate: string;
   tenantDocumentNumber: string;
   ownerDocumentNumber: string;
+  faunaCompanyName?: string;
+  faunaRut?: string;
+  faunaAddress?: string;
   propertyAddress: string;
   propertyComuna: string;
   propertyUnit: string;

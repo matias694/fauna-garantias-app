@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AdministrationPlan } from '../types';
-import { formatCLP, addDaysToDate } from '../utils/formatters';
+import { formatCLP, addDaysToDate, getLocalDateInputValue } from '../utils/formatters';
 import { X, ShieldCheck, DollarSign, User, Home } from 'lucide-react';
 
 interface NewGuaranteeModalProps {
@@ -12,7 +12,7 @@ interface NewGuaranteeModalProps {
 export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, onClose }) => {
   const { createGuaranteeCase, settings, setSelectedCaseId, setActiveView } = useApp();
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateInputValue();
 
   const [address, setAddress] = useState('');
   const [comuna, setComuna] = useState('Providencia');

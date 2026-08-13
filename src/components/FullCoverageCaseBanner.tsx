@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
-import { formatCLP, formatDate } from '../utils/formatters';
+import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
 import { Banknote, CheckCircle2, Clock3, ShieldCheck, WalletCards, X } from 'lucide-react';
 
 type OwnerPaymentPurpose = 'REPARACIONES' | 'SERVICIOS';
@@ -30,7 +30,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const [paymentPurpose, setPaymentPurpose] = useState<OwnerPaymentPurpose>('SERVICIOS');
   const [paymentMode, setPaymentMode] = useState<OwnerPaymentMode>('TRANSFERIDO_FAUNA');
   const [paymentAmount, setPaymentAmount] = useState(0);
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(getLocalDateInputValue());
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentError, setPaymentError] = useState('');
@@ -66,7 +66,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
     setPaymentPurpose(purpose);
     setPaymentMode('TRANSFERIDO_FAUNA');
     setPaymentAmount(pending);
-    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentDate(getLocalDateInputValue());
     setPaymentReference('');
     setPaymentNotes('');
     setPaymentError('');
@@ -98,6 +98,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
       ? 'Transferido a Fauna'
       : 'Pagado directamente por el propietario';
     const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    const collectionIsUncollectible = guaranteeCase.receivableStatus === 'INCOBRABLE';
 
     const resolvesPostClosePending = Boolean(
       guaranteeCase.isClosed
@@ -108,7 +109,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
     updateGuaranteeCase(guaranteeCase.id, {
       // Este saldo representa lo efectivamente asumido por el propietario y todavía no recuperado.
-      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount,
+      ownerContribution: collectionIsUncollectible
+        ? (guaranteeCase.ownerContribution || 0)
+        : (guaranteeCase.ownerContribution || 0) + paymentAmount,
       ownerPostClosePending: guaranteeCase.ownerPostClosePending
         ? {
             ...guaranteeCase.ownerPostClosePending,
@@ -145,12 +148,27 @@ export const FullCoverageCaseBanner: React.FC = () => {
       observation: [
         `Modalidad: ${modeLabel}`,
         `Destino: ${purposeLabel}`,
-        paymentMode === 'PAGADO_DIRECTO'
-          ? 'Fauna no recibió estos fondos; se registra porque el propietario ya asumió este costo y debe recuperarse si posteriormente paga el arrendatario.'
-          : 'Fauna recibió estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',
+        collectionIsUncollectible
+          ? 'La cobranza del arrendatario ya está cerrada como incobrable; este monto queda asumido definitivamente por el propietario.'
+          : paymentMode === 'PAGADO_DIRECTO'
+            ? 'Fauna no recibió estos fondos; se registra porque el propietario ya asumió este costo y debe recuperarse si posteriormente paga el arrendatario.'
+            : 'Fauna recibió estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',
         paymentNotes.trim()
       ].filter(Boolean).join(' · ')
     });
+
+    if (collectionIsUncollectible) {
+      addFinancialMovement(guaranteeCase.id, {
+        date: formatDate(paymentDate),
+        time,
+        type: 'CASTIGO_PROPIETARIO',
+        description: 'Monto asumido por propietario después de cerrar cobranza como incobrable',
+        amount: paymentAmount,
+        user: userRole,
+        reference: `CASTIGO-POST-${guaranteeCase.id}-${Date.now()}`,
+        observation: 'No se incorpora a montos por recuperar porque la cobranza del arrendatario ya estaba cerrada como incobrable.'
+      });
+    }
 
     setPaymentModalOpen(false);
   };
