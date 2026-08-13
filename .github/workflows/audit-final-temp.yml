@@ -1,0 +1,29 @@
+name: Auditoria final temporal
+
+on:
+  push:
+    branches: [auditoria-final-integridad]
+    paths:
+      - .github/workflows/audit-final-temp.yml
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: auditoria-final-integridad
+      - name: Buscar patrones sensibles
+        run: |
+          echo '=== toISOString ==='
+          grep -RIn "toISOString" src || true
+          echo '=== new Date(dateStr) ==='
+          grep -RIn "new Date(dateStr\|new Date(.*DateStr\|new Date(.*date" src/components src/context src/utils || true
+          echo '=== ownerContributionToRecover ==='
+          grep -RIn "ownerContributionToRecover" src || true
+          echo '=== ownerPostClosePending ==='
+          grep -RIn "ownerPostClosePending" src || true
+          echo '=== alert/window.confirm/window.print ==='
+          grep -RIn "alert(\|window.alert\|window.confirm\|window.print" src || true
+          echo '=== localStorage ==='
+          grep -RIn "localStorage" src || true
