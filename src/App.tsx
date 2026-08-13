@@ -10,9 +10,18 @@ import { SettingsView } from './components/SettingsView';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
-import { ExactBalanceDemoSeeder } from './components/ExactBalanceDemoSeeder';
-import { FullCoverageDemoSeeder } from './components/FullCoverageDemoSeeder';
-import { FullOwnerRecoveryDemoSeeder } from './components/FullOwnerRecoveryDemoSeeder';
+import { buildFreshDemoCases, FRESH_DEMO_DATASET_VERSION } from './data/freshDemoCases';
+
+const ensureFreshDemoDataset = () => {
+  if (typeof window === 'undefined') return;
+  const versionKey = 'fauna_demo_dataset_version';
+  if (localStorage.getItem(versionKey) === FRESH_DEMO_DATASET_VERSION) return;
+
+  localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(buildFreshDemoCases()));
+  localStorage.setItem('fauna_receivables_v2', JSON.stringify([]));
+  localStorage.setItem('fauna_audit_logs_v2', JSON.stringify([]));
+  localStorage.setItem(versionKey, FRESH_DEMO_DATASET_VERSION);
+};
 
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
@@ -43,13 +52,12 @@ const MainContent: React.FC = () => {
 };
 
 export default function App() {
+  ensureFreshDemoDataset();
+
   return (
     <AppProvider>
       <LegacyReceivableReconciler />
       <CompletedCaseSync />
-      <ExactBalanceDemoSeeder />
-      <FullCoverageDemoSeeder />
-      <FullOwnerRecoveryDemoSeeder />
       <MainContent />
     </AppProvider>
   );
