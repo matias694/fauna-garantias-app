@@ -138,7 +138,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 }
 
 // 4) Plan Full: cobertura adicional = 100% del monto de garantía, no del arriendo.
-// La cobertura contractual se materializa al confirmar; servicios pendientes no bloquean.
+// Los servicios informados al propietario no generan seguimiento después de emitir.
 {
   const c = baseCase({
     plan: 'FULL',
@@ -167,9 +167,10 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
   assert.equal(fin.tenantDeficit, 500000);
   assert.equal(fin.ownerContributionRequired, 100000);
   assert.equal(fin.faunaFinancingRequired, 400000);
-  assert.equal(ownerSettlement.ownerContributionPending, 100000);
+  assert.equal(ownerSettlement.ownerContributionPending, 0);
   assert.equal(ownerSettlement.reconciliationBalance, -100000);
-  assert.equal(readiness.ownerPendingProvision, 100000);
+  assert.equal(readiness.ownerPendingProvision, 0);
+  assert.equal(readiness.ownerServicePending, 0);
   assert.equal(readiness.fullCoveragePendingExecution, 400000);
   assert.equal(readiness.readyToConfirm, true);
   assert.equal(c.ownerContribution, 0);
@@ -247,7 +248,7 @@ function baseCase(overrides: Partial<GuaranteeCase> = {}): GuaranteeCase {
 }
 
 // 7) Full: no exige registrar manualmente un movimiento Fauna antes de confirmar.
-// El movimiento se genera de forma atómica al emitir la liquidación.
+// En estado LISTA, los servicios siguen visibles como información al propietario.
 {
   const c = baseCase({
     plan: 'FULL',
