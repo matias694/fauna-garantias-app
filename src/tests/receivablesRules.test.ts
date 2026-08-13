@@ -60,10 +60,12 @@ const baseCase: GuaranteeCase = {
   isClosed: false
 };
 
-// Una cuenta del arrendatario pagada no basta para cerrar si GC/servicios siguen a cargo del propietario.
-assert.equal(isCaseCompleted(baseCase), false);
+// Una vez emitida la liquidación, GC/servicios no financiados por Fauna son informativos:
+// el propietario ya fue informado y no se mantiene seguimiento dentro de la garantía.
+assert.equal(calculateFundingReadiness(baseCase, {} as never).ownerServicePending, 0);
+assert.equal(isCaseCompleted(baseCase), true);
 
-// Si el propietario paga ese saldo, la obligación de servicios queda regularizada y el caso puede completar.
+// Si igualmente existe un pago del propietario registrado, el caso sigue completo.
 const withOwnerServicePayment: GuaranteeCase = {
   ...baseCase,
   ownerContribution: 100000,
@@ -78,7 +80,7 @@ const withOwnerServicePayment: GuaranteeCase = {
 };
 assert.equal(isCaseCompleted(withOwnerServicePayment), true);
 
-// También puede regularizarse si el pago posterior del arrendatario cubre el tramo no financiado.
+// También puede existir un pago posterior del arrendatario sin alterar el cierre de la garantía.
 const withTenantSettlement: GuaranteeCase = {
   ...baseCase,
   movements: [
@@ -92,11 +94,8 @@ const withTenantSettlement: GuaranteeCase = {
 };
 assert.equal(isCaseCompleted(withTenantSettlement), true);
 
-// Escenario equivalente a GAR-0002 bajo las reglas vigentes:
-// Estándar, garantía $700.000, daños $700.000, servicios $350.000.
-// Propietario adelanta $100.000 y el arrendatario luego paga los $350.000 completos.
-// El pago recupera primero los $100.000 del propietario y los $250.000 restantes
-// regularizan servicios. No existe financiamiento Fauna en un plan Estándar.
+// Escenario Estándar con recuperación del propietario: cuando sí hubo desembolso,
+// el pago del arrendatario recupera primero ese monto y luego regulariza el resto.
 const standardPaidCase: GuaranteeCase = {
   ...baseCase,
   id: 'GAR-STANDARD-PAGADA',
