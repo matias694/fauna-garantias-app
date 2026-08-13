@@ -17,13 +17,12 @@ export const FullCoverageCaseBanner: React.FC = () => {
     addFinancialMovement
   } = useApp();
 
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentMode, setPaymentMode] = useState<OwnerPaymentMode>('TRANSFERIDO_FAUNA');
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(getLocalDateInputValue());
-  const [paymentReference, setPaymentReference] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [paymentError, setPaymentError] = useState('');
+  const [reference, setReference] = useState('');
+  const [error, setError] = useState('');
 
   if (activeView !== 'case-detail' || !selectedCaseId) return null;
   const guaranteeCase = cases.find(c => c.id === selectedCaseId);
@@ -31,40 +30,35 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const readiness = calculateFundingReadiness(guaranteeCase, settings);
-  const isFull = guaranteeCase.plan === 'FULL';
-  const ownerProvisionForDamage = readiness.ownerRepairFundedTotal;
   const damagePending = readiness.ownerRepairPendingProvision;
-  const servicesInformational = readiness.ownerServiceInformationalPending;
+  const servicesPending = readiness.ownerServiceInformationalPending;
+  const isFull = guaranteeCase.plan === 'FULL';
+
+  if (fin.damageCharges <= 0 && fin.serviceCharges <= 0) return null;
 
   const openRepairPayment = () => {
-    if (damagePending <= 0) return;
     setPaymentMode('TRANSFERIDO_FAUNA');
     setPaymentAmount(damagePending);
     setPaymentDate(getLocalDateInputValue());
-    setPaymentReference('');
-    setPaymentNotes('');
-    setPaymentError('');
-    setPaymentModalOpen(true);
+    setReference('');
+    setError('');
+    setPaymentOpen(true);
   };
 
-  const registerOwnerRepairPayment = (event: React.FormEvent) => {
+  const registerRepairPayment = (event: React.FormEvent) => {
     event.preventDefault();
     if (paymentAmount <= 0 || paymentAmount > damagePending) {
-      setPaymentError(`El monto debe ser mayor a $0 y no puede superar ${formatCLP(damagePending)}.`);
+      setError(`El monto debe ser mayor a $0 y no puede superar ${formatCLP(damagePending)}.`);
       return;
     }
     if (!paymentDate) {
-      setPaymentError('Selecciona la fecha real del pago.');
+      setError('Selecciona la fecha real del pago.');
       return;
     }
 
     updateGuaranteeCase(guaranteeCase.id, {
       ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount
     });
-
-    const modeLabel = paymentMode === 'TRANSFERIDO_FAUNA'
-      ? 'Transferido a Fauna'
-      : 'Pagado directamente por el propietario';
 
     addFinancialMovement(guaranteeCase.id, {
       date: formatDate(paymentDate),
@@ -77,6 +71,117 @@ export const FullCoverageCaseBanner: React.FC = () => {
         : `Pago directo realizado por propietario para reparaciones (${guaranteeCase.ownerName})`,
       amount: paymentAmount,
       user: userRole,
-      reference: paymentReference.trim() || `${paymentMode}-REPARACIONES-0‘íÕ…É…¹Ñ••…Í”¹¥‘ô´‘í…Ñ”¹¹½Ü ¥õ€°(€€€€€½‰Í•ÉÙ…Ñ¥½¸èm5½‘…±¥‘…è€‘íµ½‘•1…‰•±õ€°Á…åµ•¹Ñ9½Ñ•Ì¹ÑÉ¥´ ¥t¹™¥±Ñ•È¡	½½±•…¸¤¹©½¥¸ œƒ
-Ü€œ¤(€€€ô¤ì((€€€Í•ÑA…åµ•¹Ñ5½‘…±=Á•¸¡™…±Í”¤ì(€ôì((€¥˜€¡™¥¸¹‘…µ…•¡…É•Ì€ðô€À€˜˜™¥¸¹Í•ÉÙ¥•¡…É•Ì€ðô€À¤É•ÑÕÉ¸¹Õ±°ì((€É•ÑÕÉ¸€ (€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Áà´ÐÍ´éÁà´ØÁÐ´Ôµ…àµÜ´Ýá°µàµ…ÕÑ¼ˆø(€€€€€€ñÍ•Ñ¥½¸±…ÍÍ9…µ”ô‰‰œµ•µ•É…±´äÔÀÑ•áÐµÝ¡¥Ñ”É½Õ¹‘•´Éá°‰½É‘•È‰½É‘•Èµ•µ•É…±´äÀÀÍ¡…‘½ÜµÍ´ÀÐÍÁ…”µä´Ðˆø(€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à™±•àµ½°Í´é™±•àµÉ½ÜÍ´é¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•ÑÝ••¸…À´Ìˆø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à¥Ñ•µÌµ•¹Ñ•È…À´Èˆø(€€€€€€€€€€€í¥ÍÕ±°€ü€ñM¡¥•±‘¡•¬±…ÍÍ9…µ”ô‰Ü´Ô ´ÔÑ•áÐµ•µ•É…±´ÌÀÀˆ€¼ø€è€ñ]…±±•Ñ…É‘Ì±…ÍÍ9…µ”ô‰Ü´Ô ´ÔÑ•áÐµ•µ•É…±´ÌÀÀˆ€¼ùô(€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€ñ Ì±…ÍÍ9…µ”ô‰™½¹Ðµ•áÑÉ…‰½±Ñ•áÐµÍ´ˆùÍµ¼Í”Õ‰É”•ÍÑ„Í…±¥‘„ð½ Ìø(€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµ•µ•É…±´ÈÀÀˆùI•ÍÕµ•¸‘”™½¹‘½Ì…Á±¥…‘½Ì…¹Ñ•Ì‘”½¹™¥Éµ…È±„±¥ÅÕ¥‘…§Í¸¸ð½Àø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Ñ•áÐµ±•™ÐÍ´éÑ•áÐµÉ¥¡Ðˆø(€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ•µ•É…±´ÌÀÀ‰±½¬ˆù9•Ñ¼…É½Ìä…‰½¹½Ìð½ÍÁ…¸ø(€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµá°™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼ˆùí™½Éµ…Ñ1@¡™¥¸¹Ñ½Ñ…±¡…É•Ì¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€ð½‘¥Øø((€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÍÁ…”µä´Èˆø(€€€€€€€€€í™¥¸¹‘…µ…•¡…É•Ì€ø€À€˜˜€ (€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÝ¡¥Ñ”¼ÄÀÉ½Õ¹‘•µá°‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀÀÌ™±•à™±•àµ½°±œé™±•àµÉ½Ü±œé¥Ñ•µÌµ•¹Ñ•È…À´Ì±œé…À´Ôˆø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ØÐÍ¡É¥¹¬´Àˆø(€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ•µ•É…±´ÈÀÀ‰±½¬ˆøÄ¸‡Å½ÌäÉ•Á…É…¥½¹•Ìð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ±œ™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼ˆùí™½Éµ…Ñ1@¡™¥¸¹‘…µ…•¡…É•Ì¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à´Ä™±•à™±•àµÝÉ…À¥Ñ•µÌµ•¹Ñ•È…À´ÈÑ•áÐµlÄÅÁátˆø(€€€€€€€€€€€€€€€í™¥¸¹Õ…É…¹Ñ••½É…µ…”€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµÝ¡¥Ñ”¼ÄÀ‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀˆù…É…¹Óµ„€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹Õ…É…¹Ñ••½É…µ…”¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€í¥ÍÕ±°€˜˜™¥¸¹™Õ±±½Ù•É…•ÁÁ±¥•€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµ•µ•É…±´ÜÀÀ¼ÐÀ‰½É‘•È‰½É‘•Èµ•µ•É…±´ÔÀÀ¼ÌÀˆùA±…¸Õ±°€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹™Õ±±½Ù•É…•ÁÁ±¥•¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€í™¥¸¹É•‘¥ÑÍ½É…µ…”€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµå…¸´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµå…¸´ÌÀÀ¼ÈÀˆùá•‘•¹Ñ”…‰½¹¼€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹É•‘¥ÑÍ½É…µ…”¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€í½Ý¹•ÉAÉ½Ù¥Í¥½¹½É…µ…”€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµ‰±Õ”´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ‰±Õ”´ÌÀÀ¼ÈÀˆùAÉ½Á¥•Ñ…É¥¼€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡½Ý¹•ÉAÉ½Ù¥Í¥½¹½É…µ…”¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ÐàÍ¡É¥¹¬´À±œéÑ•áÐµÉ¥¡Ðˆø(€€€€€€€€€€€€€€€í‘…µ…•A•¹‘¥¹œ€ôôô€À€ü€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È…À´Ä¸ÔÑ•áÐµ•µ•É…±´ÈÀÀÑ•áÐµáÌ™½¹Ðµ•áÑÉ…‰½±ˆøñ¡•­¥É±”È±…ÍÍ9…µ”ô‰Ü´Ð ´Ðˆ€¼øI•Á…É…¥½¹•ÌÕ‰¥•ÉÑ…Ìð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ…µ‰•È´ÈÀÀ‰±½¬ˆù…±Ñ„Á…É„É•Á…É…Èð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ‰…Í”™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼Ñ•áÐµ…µ‰•È´ÄÀÀˆùí™½Éµ…Ñ1@¡‘…µ…•A•¹‘¥¹œ¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€¥ô((€€€€€€€€€í™¥¸¹Í•ÉÙ¥•¡…É•Ì€ø€À€˜˜€ (€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÝ¡¥Ñ”¼ÄÀÉ½Õ¹‘•µá°‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀÀ´Ì™±•à™±•àµ½°±œé™±•àµÉ½Ü±œé¥Ñ•µÌµ•¹Ñ•È…À´Ì±œé…À´Ôˆø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ØÐÍ¡É¥¹¬´Àˆø(€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ•µ•É…±´ÈÀÀ‰±½¬ˆøÈ¸…ÍÑ½Ì½µÕ¹•ÌäÍ•ÉÙ¥¥½Ìð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ±œ™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼ˆùí™½Éµ…Ñ1@¡™¥¸¹Í•ÉÙ¥•¡…É•Ì¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™±•à´Ä™±•à™±•àµÝÉ…À¥Ñ•µÌµ•¹Ñ•È…À´ÈÑ•áÐµlÄÅÁátˆø(€€€€€€€€€€€€€€€í™¥¸¹Õ…É…¹Ñ••½ÉM•ÉÙ¥•Ì€ø€À€ü€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµÝ¡¥Ñ”¼ÄÀ‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀˆù…É…¹Óµ„Í½‰É…¹Ñ”€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹Õ…É…¹Ñ••½ÉM•ÉÙ¥•Ì¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµÝ¡¥Ñ”¼Ô‰½É‘•È‰½É‘•ÈµÝ¡¥Ñ”¼ÄÀÑ•áÐµ•µ•É…±´ÈÀÀˆùM¥¸…É…¹Óµ„‘¥ÍÁ½¹¥‰±”ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€€í™¥¸¹É•‘¥ÑÍ½ÉM•ÉÙ¥•Ì€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµå…¸´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµå…¸´ÌÀÀ¼ÈÀˆù‰½¹¼ÁÉ½Á½É¥½¹…°€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡™¥¸¹É•‘¥ÑÍ½ÉM•ÉÙ¥•Ì¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€€€íÉ•…‘¥¹•ÍÌ¹½Ý¹•ÉM•ÉÙ¥•Õ¹‘•‘Q½Ñ…°€ø€À€˜˜€ñÍÁ…¸±…ÍÍ9…µ”ô‰Áà´È¸ÔÁä´Ä¸ÔÉ½Õ¹‘•µ±œ‰œµ‰±Õ”´ÐÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ‰±Õ”´ÌÀÀ¼ÈÀˆùA……‘¼Á½ÈÁÉ½Á¥•Ñ…É¥¼€ñÍÑÉ½¹œùí™½Éµ…Ñ1@¡É•…‘¥¹•ÍÌ¹½Ý¹•ÉM•ÉÙ¥•Õ¹‘•‘Q½Ñ…°¥ôð½ÍÑÉ½¹œøð½ÍÁ…¸ùô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰±œéÜ´ÐàÍ¡É¥¹¬´À±œéÑ•áÐµÉ¥¡Ðˆø(€€€€€€€€€€€€€€€íÍ•ÉÙ¥•Í%¹™½Éµ…Ñ¥½¹…°€ø€À€ü€ (€€€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÁÁátÕÁÁ•É…Í”™½¹Ðµ‰½±Ñ•áÐµ…µ‰•È´ÈÀÀ‰±½¬ˆù…É¼‘•°ÁÉ½Á¥•Ñ…É¥¼ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰Ñ•áÐµ‰…Í”™½¹Ðµ‰±…¬™½¹Ðµµ½¹¼Ñ•áÐµ…µ‰•È´ÄÀÀˆùí™½Éµ…Ñ1@¡Í•ÉÙ¥•Í%¹™½Éµ…Ñ¥½¹…°¥ôð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€€€¤€è€ (€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È…À´Ä¸ÔÑ•áÐµ•µ•É…±´ÈÀÀÑ•áÐµáÌ™½¹Ðµ•áÑÉ…‰½±ˆøñ¡•­¥É±”È±…ÍÍ9…µ”ô‰Ü´Ð ´Ðˆ€¼øM¥¸Í…±‘¼ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€¥ô(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€¥ô(€€€€€€€€ð½‘¥Øø((€€€€€€€í‘…µ…•A•¹‘¥¹œ€ø€À€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµ…µ‰•È´ÌÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ…µ‰•È´ÌÀÀ¼ÌÀÉ½Õ¹‘•µá°ÀÌ™±•à™±•àµ½°µé™±•àµÉ½Üµé¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•ÑÝ••¸…À´Ìˆø(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµ…µ‰•È´ÄÀÀˆø(€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰‰±½¬Ñ•áÐµáÌˆù…±Ñ…¸í™½Éµ…Ñ1@¡‘…µ…•A•¹‘¥¹œ¥ôÁ…É„Õ‰É¥È±…ÌÉ•Á…É…¥½¹•Ì¸ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰‰±½¬µÐ´À¸ÔˆùÍÑ”µ½¹Ñ¼Ï´‘•‰”•ÍÑ…È•™•Ñ¥Ù…µ•¹Ñ”…ÍÕµ¥‘¼…¹Ñ•Ì‘”½¹™¥Éµ…È±„±¥ÅÕ¥‘…§Í¸¸ð½ÍÁ…¸ø(€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õí½Á•¹I•Á…¥ÉA…åµ•¹Ñô±…ÍÍ9…µ”ô‰Í¡É¥¹¬´ÀÁà´ÐÁä´ÈÉ½Õ¹‘•µá°‰œµÝ¡¥Ñ”Ñ•áÐµ•µ•É…±´äÔÀ¡½Ù•Èé‰œµ•µ•É…°´ÔÀÑ•áÐµáÌ™½¹Ðµ•áÑÉ…‰½±¥¹±¥¹”µ™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ•¹Ñ•È…À´Ä¸ÔÕÉÍ½ÈµÁ½¥¹Ñ•Èˆø(€€€€€€€€€€€€€€ñ	…¹­¹½Ñ”±…ÍÍ9…µ”ô‰Ü´Ð ´Ðˆ€¼øI•¥ÍÑÉ…È…Á½ÉÑ”Á…É„É•Á…É…¥½¹•Ì(€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€¥ô((€€€€€€€í‘…µ…•A•¹‘¥¹œ€ôôô€À€˜˜€ (€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµ•µ•É…±´ÌÀÀ¼ÄÀ‰½É‘•È‰½É‘•Èµ•µ•É…±´ÌÀÀ¼ÌÀÉ½Õ¹‘•µá°Áà´ÌÁä´ÈÑ•áÐµlÄÅÁátÑ•áÐµ•µ•É…±´ÄÀÀ™±•à¥Ñ•µÌµ•¹Ñ•È…À´Èˆø(€€€€€€€€€€€€ñ¡•­¥É±”È±…ÍÍ9…µ”ô‰Ü´Ð ´ÐÍ¡É¥¹¬´Àˆ€¼ø(€€€€€€€€€€€€ñÍÑÉ½¹œù1…ÌÉ•Á…É…¥½¹•Ì•ÍÓ…¸Õ‰¥•ÉÑ…Ì¸ð½ÍÑÉ½¹œø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€¥ô(€€€€€€ð½Í•Ñ¥½¸ø((€€€€€íÁ…åµ•¹Ñ5½‘…±=Á•¸€˜˜€ (€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰™¥á•¥¹Í•Ð´ÀèµlÜÁt‰œµÍ±…Ñ”´äÀÀ¼ØÔ‰…­‘É½Àµ‰±ÕÈµáÌ™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ•¹Ñ•ÈÀ´Ðˆø(€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÝ¡¥Ñ”Ñ•áÐµÍ±…Ñ”´àÀÀÉ½Õ¹‘•´Éá°Í¡…‘½Ü´Éàµ…àµÜµ±œÝ™Õ±°½Ù•É™±½Üµ¡¥‘‘•¸‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÈÀÀˆø(€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÍ±…Ñ”´äÀÀÑ•áÐµÝ¡¥Ñ”ÀÔ™±•à¥Ñ•µÌµ•¹Ñ•È©ÕÍÑ¥™äµ‰•ÑÝ••¸ˆø(€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ Ì±…ÍÍ9…µ”ô‰™½¹Ðµ‰½±Ñ•áÐµ‰…Í”ˆùI•¥ÍÑÉ…È…Á½ÉÑ”‘•°ÁÉ½Á¥•Ñ…É¥¼ð½ Ìø(€€€€€€€€€€€€€€€€ñÀ±…ÍÍ9…µ”ô‰Ñ•áÐµáÌÑ•áÐµÍ±…Ñ”´ÌÀÀµÐ´À¸ÔˆùI•Á…É…¥½¹•Ìƒ
-Üí™½Éµ…Ñ1@¡‘…µ…•A•¹‘¥¹œ¥ôð½Àø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘…±=Á•¸¡™…±Í”¥ô±…ÍÍ9…µ”ô‰À´ÄÑ•áÐµÍ±…Ñ”´ÐÀÀ¡½Ù•ÈéÑ•áÐµÝ¡¥Ñ”ÕÉÍ½ÈµÁ½¥¹Ñ•Èˆø(€€€€€€€€€€€€€€€€ñ`±…ÍÍ9…µ”ô‰Ü´Ô ´Ôˆ€¼ø(€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€ñ™½É´½¹MÕ‰µ¥ÐõíÉ•¥ÍÑ•É=Ý¹•ÉI•Á…¥ÉA…åµ•¹Ñô±…ÍÍ9…µ”ô‰ÀØÍÁ…”µä´ÐÑ•áÐµáÌˆø(€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥É¥µ½±Ì´ÄÍ´éÉ¥µ½±Ì´È…À´Ìˆø(€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹Ðµ‰½±Ñ•áÐµÍ±…Ñ”´àÀÀµˆ´Äˆù5½¹Ñ¼€¨ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐÑåÁ”ô‰¹Õµ‰•Èˆµ¥¸ôˆÄˆµ…àõí‘…µ…•A•¹‘¥¹ôÍÑ•ÀôˆÄˆÉ•ÅÕ¥É•Ù…±Õ”õíÁ…åµ•¹Ñµ½Õ¹Ñô½¹¡…¹”õí”€ôøìÍ•ÑA…åµ•¹Ñµ½Õ¹Ð¡9Õµ‰•È¡”¹Ñ…É•Ð¹Ù…±Õ”¤¤ìÍ•ÑA…åµ•¹ÑÉÉ½È œœ¤ìõô±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀ´È¸ÔÑ•áÐµÍ´™½¹Ðµ‰½±™½¹Ðµµ½¹¼ˆ€¼ø(€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹Ðµ‰½±Ñ•áÐµÍ±…Ñ”´àÀÀµˆ´Äˆù•¡„É•…°‘•°Á…¼€¨ð½±…‰•°ø(€€€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐÑåÁ”ô‰‘…Ñ”ˆÉ•ÅÕ¥É•Ù…±Õ”õíÁ…åµ•¹Ñ…Ñ•ô½¹¡…¹”õí”€ôøìÍ•ÑA…åµ•¹Ñ…Ñ”¡”¹Ñ…É•Ð¹Ù…±Õ”¤ìÍ•ÑA…åµ•¹ÑÉÉ½È œœ¤ìõô±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀ´È¸Ôˆ€¼ø(€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹Ðµ‰½±Ñ•áÐµÍ±…Ñ”´àÀÀµˆ´Èˆù5½‘…±¥‘…€¨ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰É¥É¥µ½±Ì´Ä…À´Èˆø(€€€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘” QI9MI%=}U9œ¥ô±…ÍÍ9…µ”õíÑ•áÐµ±•™ÐÀ´ÌÉ½Õ¹‘•µá°‰½É‘•È€‘íÁ…åµ•¹Ñ5½‘”€ôôô€QI9MI%=}U9œ€ü€‰½É‘•Èµ•µ•É…±´ÔÀÀ‰œµ•µ•É…°´ÔÀœ€è€‰½É‘•ÈµÍ±…Ñ”´ÈÀÀ‰œµÝ¡¥Ñ”ôÕÉÍ½ÈµÁ½¥¹Ñ•Éôø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰‰±½¬Ñ•áÐµÍ±…Ñ”´äÀÀˆùQÉ…¹Í™•É¥‘¼„…Õ¹„ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµÍ±…Ñ”´ØÀÀˆù…Õ¹„É•¥‰§Ì•™•Ñ¥Ù…µ•¹Ñ”±½Ì™½¹‘½ÌÁ…É„•©•ÕÑ…È±„É•Á…É…§Í¸¸ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘” A=}%IQ<œ¥ô±…ÍÍ9…µ”õíÑ•áÐµ±•™ÐÀ´ÌÉ½Õ¹‘•µá°‰½É‘•È€‘íÁ…åµ•¹Ñ5½‘”€ôôô€A=}%IQ<œ€ü€‰½É‘•Èµ•µ•É…±´ÔÀÀ‰œµ•µ•É…°´ÔÀœ€è€‰½É‘•ÈµÍ±…Ñ”´ÈÀÀ‰œµÝ¡¥Ñ”ôÕÉÍ½ÈµÁ½¥¹Ñ•Éôø(€€€€€€€€€€€€€€€€€€€€ñÍÑÉ½¹œ±…ÍÍ9…µ”ô‰‰±½¬Ñ•áÐµÍ±…Ñ”´äÀÀˆùA……‘¼‘¥É•Ñ…µ•¹Ñ”ð½ÍÑÉ½¹œø(€€€€€€€€€€€€€€€€€€€€ñÍÁ…¸±…ÍÍ9…µ”ô‰Ñ•áÐµlÄÅÁátÑ•áÐµÍ±…Ñ”´ØÀÀˆù°ÁÉ½Á¥•Ñ…É¥¼Á…ŸÌ‘¥É•Ñ…µ•¹Ñ”…°ÁÉ½Ù••‘½È¸…Õ¹„¹¼É•¥‰§Ì•Í”‘¥¹•É¼¸ð½ÍÁ…¸ø(€€€€€€€€€€€€€€€€€€ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹ÐµÍ•µ¥‰½±Ñ•áÐµÍ±…Ñ”´ÜÀÀµˆ´ÄˆùI•™•É•¹¥„€¼½µÁÉ½‰…¹Ñ”ð½±…‰•°ø(€€€€€€€€€€€€€€€€ñ¥¹ÁÕÐÙ…±Õ”õíÁ…åµ•¹ÑI•™•É•¹•ô½¹¡…¹”õí”€ôøÍ•ÑA…åµ•¹ÑI•™•É•¹”¡”¹Ñ…É•Ð¹Ù…±Õ”¥ôÁ±…•¡½±‘•Èô‰¨¸ÑÉ…¹Í™•É•¹¥„€ÄÈÌÐÔ°™…ÑÕÉ„ÁÉ½Ù••‘½È¸¸¸ˆ±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀÈ¸Ôˆ€¼ø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€€ñ‘¥Øø(€€€€€€€€€€€€€€€€ñ±…‰•°±…ÍÍ9…µ”ô‰‰±½¬™½¹ÐµÍ•µ¥‰½±Ñ•áÐµÍ±…Ñ”´ÜÀÀµˆ´Äˆù=‰Í•ÉÙ…¥½¹•Ìð½±…‰•°ø(€€€€€€€€€€€€€€€€ñÑ•áÑ…É•„É½ÝÌõìÉôÙ…±Õ”õíÁ…åµ•¹Ñ9½Ñ•Íô½¹¡…¹”õí”€ôøÍ•ÑA…åµ•¹Ñ9½Ñ•Ì¡”¹Ñ…É•Ð¹Ù…±Õ”¥ô±…ÍÍ9…µ”ô‰Üµ™Õ±°‰œµÍ±…Ñ”´ÔÀ‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÉ½Õ¹‘•µ±œÀ´È¸Ôˆ€¼ø(€€€€€€€€€€€€€€ð½‘¥Øø((€€€€€€€€€€€€€íÁ…åµ•¹ÑÉÉ½È€˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰‰œµÉ½Í”´ÔÀ‰½É‘•È‰½É‘•ÈµÉ½Í”´ÈÀÀÉ½Õ¹‘•µá°ÀÌÑ•áÐµlÄÅÁát™½¹ÐµÍ•µ¥‰½±Ñ•áÐµÉ½Í”´àÀÀˆùíÁ…åµ•¹ÑÉÉ½Éôð½‘¥Øùô((€€€€€€€€€€€€€€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÁÐ´Ì‰½É‘•ÈµÐ‰½É‘•ÈµÍ±…Ñ”´ÄÀÀ™±•à©ÕÍÑ¥™äµ•¹…À´Èˆø(€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ½¹±¥¬õì ¤€ôøÍ•ÑA…åµ•¹Ñ5½‘…±=Á•¸¡™…±Í”¥ô±…ÍÍ9…µ”ô‰Áà´ÐÁä´È‰½É‘•È‰½É‘•ÈµÍ±…Ñ”´ÌÀÀÑ•áÐµÍ±…Ñ”´ØÀÀÉ½Õ¹‘•µ±œ™½¹ÐµÍ•µ¥‰½±ÕÉÍ½ÈµÁ½¥¹Ñ•Èˆù…¹•±…Èð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€€€ñ‰ÕÑÑ½¸ÑåÁ”ô‰ÍÕ‰µ¥Ðˆ±…ÍÍ9…µ”ô‰Áà´ÔÁä´È‰œµ•µ•É…±´ÜÀÀ¡½Ù•Èé‰œµ•µ•É…±´àÀÀÑ•áÐµÝ¡¥Ñ”™½¹Ðµ‰½±É½Õ¹‘•µ±œÕÉÍ½ÈµÁ½¥¹Ñ•ÈˆùI•¥ÍÑÉ…È…Á½ÉÑ”ð½‰ÕÑÑ½¸ø(€€€€€€€€€€€€€€ð½‘¥Øø(€€€€€€€€€€€€ð½™½É´ø(€€€€€€€€€€ð½‘¥Øø(€€€€€€€€ð½‘¥Øø(€€€€€€¥ô(€€€€ð½‘¥Øø(€€¤ì)ôì
+      reference: reference.trim() || `${paymentMode}-REPARACIONES-${guaranteeCase.id}-${Date.now()}`,
+      observation: paymentMode === 'TRANSFERIDO_FAUNA'
+        ? 'Fondos recibidos para ejecutar reparaciones.'
+        : 'Reparacion pagada directamente por el propietario.'
+    });
+
+    setPaymentOpen(false);
+  };
+
+  return (
+    <div className="px-4 sm:px-6 pt-5 max-w-7xl mx-auto">
+      <section className="bg-emerald-950 text-white rounded-2xl border border-emerald-900 shadow-sm p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {isFull ? <ShieldCheck className="w-5 h-5 text-emerald-300" /> : <WalletCards className="w-5 h-5 text-emerald-300" />}
+            <div>
+              <h3 className="font-extrabold text-sm">Como se cubre esta salida</h3>
+              <p className="text-[11px] text-emerald-200">Resumen de fondos aplicados antes de confirmar la liquidacion.</p>
+            </div>
+          </div>
+          <div className="text-left sm:text-right">
+            <span className="text-[10px] uppercase font-bold text-emerald-300 block">Neto cargos y abonos</span>
+            <strong className="text-xl font-black font-mono">{formatCLP(fin.totalCharges)}</strong>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {fin.damageCharges > 0 && (
+            <div className="bg-white/10 rounded-xl border border-white/10 p-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
+              <div className="lg:w-64 shrink-0">
+                <span className="text-[10px] uppercase font-bold text-emerald-200 block">1. Danos y reparaciones</span>
+                <strong className="text-lg font-black font-mono">{formatCLP(fin.damageCharges)}</strong>
+              </div>
+              <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
+                {fin.guaranteeForDamage > 0 && <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">Garantia <strong>{formatCLP(fin.guaranteeForDamage)}</strong></span>}
+                {isFull && fin.fullCoverageApplied > 0 && <span className="px-2.5 py-1.5 rounded-lg bg-emerald-700/40 border border-emerald-500/30">Plan Full <strong>{formatCLP(fin.fullCoverageApplied)}</strong></span>}
+                {readiness.ownerRepairFundedTotal > 0 && <span className="px-2.5 py-1.5 rounded-lg bg-blue-400/10 border border-blue-300/20">Propietario <strong>{formatCLP(readiness.ownerRepairFundedTotal)}</strong></span>}
+              </div>
+              <div className="lg:w-48 shrink-0 lg:text-right">
+                {damagePending === 0
+                  ? <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold"><CheckCircle2 className="w-4 h-4" /> Reparaciones cubiertas</span>
+                  : <div><span className="text-[10px] uppercase font-bold text-amber-200 block">Falta para reparar</span><strong className="text-base font-black font-mono text-amber-100">{formatCLP(damagePending)}</strong></div>}
+              </div>
+            </div>
+          )}
+
+          {fin.serviceCharges > 0 && (
+            <div className="bg-white/10 rounded-xl border border-white/10 p-3 flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-5">
+              <div className="lg:w-64 shrink-0">
+                <span className="text-[10px] uppercase font-bold text-emerald-200 block">2. Gastos comunes y servicios</span>
+                <strong className="text-lg font-black font-mono">{formatCLP(fin.serviceCharges)}</strong>
+              </div>
+              <div className="flex-1 flex flex-wrap items-center gap-2 text-[11px]">
+                {fin.guaranteeForServices > 0
+                  ? <span className="px-2.5 py-1.5 rounded-lg bg-white/10 border border-white/10">Garantia sobrante <strong>{formatCLP(fin.guaranteeForServices)}</strong></span>
+                  : <span className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-emerald-200">Sin garantia disponible</span>}
+                {fin.creditsForServices > 0 && <span className="px-2.5 py-1.5 rounded-lg bg-cyan-400/10 border border-cyan-300/20">Abono proporcional <strong>{formatCLP(fin.creditsForServices)}</strong></span>}
+              </div>
+              <div className="lg:w-48 shrink-0 lg:text-right">
+                {servicesPending > 0
+                  ? <div><span className="text-[10px] uppercase font-bold text-amber-200 block">A cargo del propietario</span><strong className="text-base font-black font-mono text-amber-100">{formatCLP(servicesPending)}</strong></div>
+                  : <span className="inline-flex items-center gap-1.5 text-emerald-200 text-xs font-extrabold"><CheckCircle2 className="w-4 h-4" /> Sin saldo</span>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {damagePending > 0 ? (
+          <div className="bg-amber-300/10 border border-amber-300/30 rounded-xl p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <strong className="text-xs text-amber-100">Faltan {formatCLP(damagePending)} para cubrir las reparaciones.</strong>
+            <button type="button" onClick={openRepairPayment} className="shrink-0 px-4 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emeral-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
+              <Banknote className="w-4 h-4" /> Registrar aporte para reparaciones
+            </button>
+          </div>
+        ) : (
+          <div className="bg-emerald-300/10 border border-emerald-300/30 rounded-xl px-3 py-2 text-[11px] text-emerald-100 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <strong>Las reparaciones estan cubiertas.</strong>
+          </div>
+        )}
+      </section>
+
+      {paymentOpen && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base">Registrar aporte del propietario</h3>
+                <p className="text-xs text-slate-300 mt-0.5">Reparaciones Â³ {formatCLP(damagePending)}</p>
+              </div>
+              <button type="button" onClick={() => setPaymentOpen(false)} className="p-1 text-slate-400 hover:text-white cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={registerRepairPayment} className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="block font-bold mb-1">Monto *</label><input type="number" min="1" max={damagePending} required value={paymentAmount} onChange={e => setPaymentAmount(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" /></div>
+                <div><label className="block font-bold mb-1">Fecha *</label><input type="date" required value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" /></div>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <button type="button" onClick={() => setPaymentMode('TRANSFERIDO_FAUNA')} className={`text-left p-3 rounded-xl border ${paymentMode === 'TRANSFERIDO_FAUNA' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}><strong>Transferido a Fauna</strong></button>
+                <button type="button" onClick={() => setPaymentMode('PAGADO_DIRECTO')} className={`text-left p-3 rounded-xl border ${paymentMode === 'PAGADO_DIRECTO' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200'}`}><strong>Pagado directamente por el propietario</strong></button>
+              </div>
+              <div><label className="block font-semibold mb-1">Referencia / comprobante</label><input value={reference} onChange={e => setReference(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" /></div>
+              {error && <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-800">{error}</div>}
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                <button type="button" onClick={() => setPaymentOpen(false)} className="px-4 py-2 border border-slate-300 rounded-lg">Cancelar</button>
+                <button type="submit" className="px-5 py-2 bg-emerald-700 text-white font-bold rounded-lg">Registrar aporte</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
