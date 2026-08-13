@@ -1,0 +1,38 @@
+name: Validar seguimiento posterior
+
+on:
+  push:
+    branches: [auditoria-final-integridad]
+    paths:
+      - .github/workflows/postclose-ux-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: auditoria-final-integridad
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Aplicar ajuste
+        run: python scripts/postclose_ux_patch.py
+      - name: Validar
+        run: |
+          npm ci
+          npm run lint
+          npm run test:rules
+          npm run build
+      - name: Commit
+        run: |
+          rm -f .github/workflows/postclose-ux-temp.yml scripts/postclose_ux_patch.py
+          git config user.name 'matias694'
+          git config user.email 'matias@faunapropiedades.cl'
+          git add -A
+          git commit -m 'Permitir gestionar seguimiento posterior sin reabrir garantía'
+          git push origin auditoria-final-integridad
