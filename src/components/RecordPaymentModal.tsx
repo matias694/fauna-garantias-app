@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Receivable } from '../types';
-import { formatCLP } from '../utils/formatters';
+import { formatCLP, getLocalDateInputValue } from '../utils/formatters';
 import { calculatePaymentDistribution } from '../utils/calculations';
 import { X, DollarSign, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -27,7 +27,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
     if (!isOpen || !receivable) return;
     const guaranteeCase = cases.find(c => c.id === receivable.caseId);
     setPaymentAmount(Math.min(100000, receivable.pendingBalance));
-    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentDate(getLocalDateInputValue());
     setPaymentReference('');
     setNotes('');
     setNextManagement('Gestionar saldo pendiente con arrendatario');

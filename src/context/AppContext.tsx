@@ -19,11 +19,13 @@ import {
   TenantRefund
 } from '../types';
 import { initialGuaranteeCases, initialReceivables, initialSettings, defaultRequirements } from '../data/initialData';
-import { addDaysToDate, formatDate } from '../utils/formatters';
+import { addDaysToDate, formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
 import {
   calculateFundingReadiness,
   calculateGuaranteeFinances,
-  calculatePaymentDistribution
+  calculatePaymentDistribution,
+  canConfirmGuaranteeLiquidation,
+  isChargeIncludedInLiquidation
 } from '../utils/calculations';
 
 const nextSequentialId = (prefix: string, ids: string[]) => {
@@ -65,19 +67,51 @@ const normalizeFinancialLedger = (c: GuaranteeCase): GuaranteeCase => {
   return { ...c, movements };
 };
 
+
+export const normalizeClosedOwnerPending = (c: GuaranteeCase): GuaranteeCase => {
+  if (!c.isClosed || c.ownerPostClosePending || !c.ownerServiceDeferral) return c;
+
+  const readiness = calculateFundingReadiness(c, initialSettings);
+  if (readiness.ownerServicePending <= 0) return c;
+
+  return {
+    ...c,
+    ownerPostClosePending: {
+      amountAtTransfer: readiness.ownerServicePending,
+      reason: c.ownerServiceDeferral.reason,
+      nextReviewDate: c.ownerServiceDeferral.nextReviewDate,
+      responsible: c.ownerServiceDeferral.responsible,
+      transferredAt: c.ownerServiceDeferral.createdAt,
+      transferredBy: c.closedBy || c.ownerServiceDeferral.createdBy,
+      status: 'PENDIENTE'
+    },
+    ownerServiceDeferral: undefined
+  };
+};
+
 export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = initialSettings): boolean {
   if (c.liquidationStatus !== 'EMITIDA') return false;
   if (c.preparationStatus !== 'LISTA') return false;
   if (c.blockedBy !== 'SIN_BLOQUEO') return false;
 
-  if (c.refund && c.refund.amount > 0 && c.refund.status !== 'TRANSFERIDA') return false;
+  const fin = calculateGuaranteeFinances(c, settings);
+  const originalRefund = c.liquidationSnapshot?.financials.refundToTenant ?? fin.refundToTenant;
+  const originalDeficit = c.liquidationSnapshot?.financials.tenantDeficit ?? fin.tenantDeficit;
 
-  if (c.receivableStatus && c.receivableStatus !== 'PAGADA' && c.receivableStatus !== 'INCOBRABLE') {
+  if (originalRefund > 0 && c.refund?.status !== 'TRANSFERIDA') return false;
+
+  if (originalDeficit > 0 && c.receivableStatus !== 'PAGADA' && c.receivableStatus !== 'INCOBRABLE') {
     return false;
   }
 
   const readiness = calculateFundingReadiness(c, settings);
-  if (readiness.ownerServicePending > 0 && !c.ownerServiceDeferral && !c.ownerPostClosePending) return false;
+  if (readiness.ownerServicePending > 0) {
+    if (c.isClosed) {
+      if (!c.ownerPostClosePending || c.ownerPostClosePending.status !== 'PENDIENTE') return false;
+    } else if (!c.ownerServiceDeferral) {
+      return false;
+    }
+  }
 
   return true;
 }
@@ -143,7 +177,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saved) {
       try {
         return JSON.parse(saved).map((raw: GuaranteeCase) => {
-          const c = normalizeFinancialLedger(raw);
+          const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
           return { ...c, isCompleted: isCaseCompleted(c) };
         });
       } catch (e) {
@@ -151,7 +185,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     return initialGuaranteeCases.map(raw => {
-      const c = normalizeFinancialLedger(raw);
+      const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
       return { ...c, isCompleted: isCaseCompleted(c) };
     });
   });
@@ -251,7 +285,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const changePreparationStatus = (caseId: string, newStatus: PreparationStatus) => {
-    const todayStr = formatDate(new Date().toISOString().split('T')[0]);
+    const todayStr = formatDate(getLocalDateInputValue());
     setCases(prev => prev.map(c => {
       if (c.id !== caseId) return c;
       return withCompletion({
@@ -346,7 +380,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         repairs,
         preparationStatus: allFinished ? 'LISTA' : c.preparationStatus,
         preparationReadyDate: allFinished && c.preparationStatus !== 'LISTA'
-          ? formatDate(new Date().toISOString().split('T')[0])
+          ? formatDate(getLocalDateInputValue())
           : c.preparationReadyDate
       });
     }));
@@ -363,7 +397,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         repairs,
         preparationStatus: allFinished ? 'LISTA' : c.preparationStatus,
         preparationReadyDate: allFinished && c.preparationStatus !== 'LISTA'
-          ? formatDate(new Date().toISOString().split('T')[0])
+          ? formatDate(getLocalDateInputValue())
           : c.preparationReadyDate
       });
     }));
@@ -378,7 +412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const buildTenantCreditMovement = (caseId: string, charge: Charge, movementId?: string): FinancialMovement => ({
     id: movementId || `MOV-ABONO-${Date.now()}`,
     caseId,
-    date: formatDate(charge.date || new Date().toISOString().split('T')[0]),
+    date: formatDate(charge.date || getLocalDateInputValue()),
     time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
     type: 'ABONO_ARRENDATARIO',
     description: `Abono previo del arrendatario: ${charge.description}`,
@@ -474,7 +508,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (deficit <= 0) return null;
 
     const newRecId = nextSequentialId('REC', receivables.map(r => r.id));
-    const today = formatDate(new Date().toISOString().split('T')[0]);
+    const today = formatDate(getLocalDateInputValue());
     const newReceivable: Receivable = {
       id: newRecId,
       caseId,
@@ -509,11 +543,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const emitLiquidation = (caseId: string) => {
     const targetCase = cases.find(c => c.id === caseId);
-    if (!targetCase || targetCase.liquidationStatus !== 'LISTA' || targetCase.blockedBy !== 'SIN_BLOQUEO') return;
+    if (!targetCase || !canConfirmGuaranteeLiquidation(targetCase, settings)) return;
 
     const fin = calculateGuaranteeFinances(targetCase, settings);
     const readiness = calculateFundingReadiness(targetCase, settings);
-    if (!readiness.readyToConfirm) return;
 
     let refund = targetCase.refund;
     let receivableId = targetCase.receivableId;
@@ -535,13 +568,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const issuedAt = new Date().toISOString();
-    const issuedDate = formatDate(issuedAt.split('T')[0]);
+    const issuedDate = formatDate(getLocalDateInputValue());
     const snapshot = {
-      calculationVersion: '2026-08-v1' as const,
+      calculationVersion: '2026-08-v2' as const,
       issuedAt,
       issuedDate,
       tenantDocumentNumber: `LIQ-AR-${targetCase.id}`,
       ownerDocumentNumber: `LIQ-PROP-${targetCase.id}`,
+      faunaCompanyName: settings.faunaCompanyName,
+      faunaRut: settings.faunaRut,
+      faunaAddress: settings.faunaAddress,
       propertyAddress: targetCase.propertyAddress,
       propertyComuna: targetCase.propertyComuna,
       propertyUnit: targetCase.propertyUnit,
@@ -552,7 +588,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tenantName: targetCase.tenantName,
       tenantRut: targetCase.tenantRut,
       tenantEmail: targetCase.tenantEmail,
-      charges: targetCase.charges.map(ch => ({
+      charges: targetCase.charges.filter(isChargeIncludedInLiquidation).map(ch => ({
         ...ch,
         documents: [...(ch.documents || [])],
         photos: [...(ch.photos || [])],
@@ -614,7 +650,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const movement: FinancialMovement = {
       id: 'MOV-' + Date.now(),
       caseId,
-      date: formatDate(refundData.date || new Date().toISOString().split('T')[0]),
+      date: formatDate(refundData.date || getLocalDateInputValue()),
       time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
       type: 'DEVOLUCION_ARRENDATARIO',
       description: `Devolución de garantía a arrendatario (${targetCase.tenantName})`,
@@ -650,7 +686,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const faunaToRecover = targetCase ? Math.max(0, targetCase.faunaFinancing || 0) : targetRec.faunaFinancingToRecover;
     const dist = calculatePaymentDistribution(paymentAmount, ownerToRecover, faunaToRecover);
 
-    const dateStr = formatDate(paymentDate || new Date().toISOString().split('T')[0]);
+    const dateStr = formatDate(paymentDate || getLocalDateInputValue());
     const timeStr = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
     const newPending = Math.max(0, targetRec.pendingBalance - paymentAmount);
     const newStatus: Receivable['status'] = newPending <= 0 ? 'PAGADA' : 'PAGO_PARCIAL';
@@ -738,10 +774,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!targetRec || !reason.trim() || targetRec.status === 'PAGADA' || targetRec.status === 'INCOBRABLE') return;
 
     const targetCase = cases.find(c => c.id === targetRec.caseId);
-    const today = formatDate(new Date().toISOString().split('T')[0]);
+    const today = formatDate(getLocalDateInputValue());
     const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-    const ownerWriteOff = Math.max(0, targetRec.ownerContributionToRecover || targetCase?.ownerContribution || 0);
-    const faunaWriteOff = Math.max(0, targetRec.faunaFinancingToRecover || targetCase?.faunaFinancing || 0);
+    const ownerWriteOff = targetCase
+      ? Math.max(0, targetCase.ownerContribution || 0)
+      : Math.max(0, targetRec.ownerContributionToRecover || 0);
+    const faunaWriteOff = targetCase
+      ? Math.max(0, targetCase.faunaFinancing || 0)
+      : Math.max(0, targetRec.faunaFinancingToRecover || 0);
 
     const writeOffMovements: FinancialMovement[] = [];
     if (ownerWriteOff > 0) writeOffMovements.push({
@@ -808,9 +848,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (targetCase.blockedBy !== 'SIN_BLOQUEO') pending.push(`bloqueo por ${targetCase.blockedBy.toLowerCase()}`);
       if (targetCase.preparationStatus !== 'LISTA') pending.push('preparación física');
       if (targetCase.liquidationStatus !== 'EMITIDA') pending.push('liquidación emitida');
-      if (targetCase.refund && targetCase.refund.amount > 0 && targetCase.refund.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
-      if (targetCase.receivableStatus && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
-      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral && !targetCase.ownerPostClosePending) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');
+      const closeFin = calculateGuaranteeFinances(targetCase, settings);
+      const originalRefund = targetCase.liquidationSnapshot?.financials.refundToTenant ?? closeFin.refundToTenant;
+      const originalDeficit = targetCase.liquidationSnapshot?.financials.tenantDeficit ?? closeFin.tenantDeficit;
+      if (originalRefund > 0 && targetCase.refund?.status !== 'TRANSFERIDA') pending.push('devolución al arrendatario');
+      if (originalDeficit > 0 && targetCase.receivableStatus !== 'PAGADA' && targetCase.receivableStatus !== 'INCOBRABLE') pending.push('cuenta por cobrar');
+      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');
       return { success: false, message: `No se puede cerrar el caso todavía. Pendiente: ${pending.join(', ') || 'requisitos operativos del caso'}.` };
     }
 
@@ -832,7 +875,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCases(prev => prev.map(c => c.id === caseId ? {
       ...c,
       isClosed: true,
-      closedAt: new Date().toLocaleString('es-CL'),
+      closedAt: new Date().toISOString(),
       closedBy: userRole,
       isCompleted: true,
       ownerPostClosePending: postClosePending,
@@ -860,7 +903,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reopenGuaranteeCase = (caseId: string) => {
     if (userRole !== 'ADMINISTRADOR') return;
-    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, isClosed: false }) : c));
+    const targetCase = cases.find(c => c.id === caseId);
+    if (!targetCase) return;
+
+    const readiness = calculateFundingReadiness(targetCase, settings);
+    const pendingPostClose = targetCase.ownerPostClosePending?.status === 'PENDIENTE'
+      && readiness.ownerServicePending > 0
+      ? targetCase.ownerPostClosePending
+      : undefined;
+
+    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({
+      ...c,
+      isClosed: false,
+      ownerServiceDeferral: pendingPostClose ? {
+        amountAtDeferral: readiness.ownerServicePending,
+        reason: pendingPostClose.reason,
+        nextReviewDate: pendingPostClose.nextReviewDate,
+        responsible: pendingPostClose.responsible,
+        createdAt: pendingPostClose.transferredAt,
+        createdBy: pendingPostClose.transferredBy
+      } : c.ownerServiceDeferral,
+      ownerPostClosePending: pendingPostClose ? undefined : c.ownerPostClosePending,
+      nextManagement: pendingPostClose ? `Revisar pendiente propietario de ${formatCLP(readiness.ownerServicePending)}` : c.nextManagement,
+      nextManagementDate: pendingPostClose ? pendingPostClose.nextReviewDate : c.nextManagementDate,
+      nextManagementResponsible: pendingPostClose ? pendingPostClose.responsible : c.nextManagementResponsible
+    }) : c));
+
+    if (pendingPostClose) {
+      logAudit(caseId, 'Seguimiento posterior reincorporado', 'El pendiente del propietario volvió al flujo activo al reabrir la garantía.');
+    }
     logAudit(caseId, 'Reapertura de Caso', `Caso ${caseId} reabierto por Administrador`);
   };
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Receivable } from '../types';
-import { formatCLP } from '../utils/formatters';
+import { formatCLP, parseLocalDate } from '../utils/formatters';
 import { RecordPaymentModal } from './RecordPaymentModal';
 import { Receipt, Search, DollarSign, UserCheck, AlertTriangle, ClipboardPen, X } from 'lucide-react';
 
@@ -30,17 +30,7 @@ export const ReceivablesList: React.FC = () => {
   const [showUncollectible, setShowUncollectible] = useState(false);
   const [uncollectibleReason, setUncollectibleReason] = useState('');
 
-  const parseDateStr = (dateStr?: string): Date | null => {
-    if (!dateStr) return null;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-      }
-    }
-    const parsed = new Date(dateStr);
-    return isNaN(parsed.getTime()) ? null : parsed;
-  };
+  const parseDateStr = parseLocalDate;
 
   const isOverdue = (dateStr?: string) => {
     const d = parseDateStr(dateStr);

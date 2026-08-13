@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatCLP } from '../utils/formatters';
+import { formatCLP, parseLocalDate } from '../utils/formatters';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
 import { getSettlementState } from '../utils/settlementState';
 import { Search, Plus, ChevronRight, UserCheck } from 'lucide-react';
@@ -59,17 +59,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
     setActiveView('case-detail');
   };
 
-  const parseDateStr = (dateStr?: string): Date | null => {
-    if (!dateStr) return null;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-      }
-    }
-    const parsed = new Date(dateStr);
-    return isNaN(parsed.getTime()) ? null : parsed;
-  };
+  const parseDateStr = parseLocalDate;
 
   const isOverdue = (dateStr?: string) => {
     const d = parseDateStr(dateStr);

@@ -64,6 +64,15 @@ export const FullCoverageDemoSeeder: React.FC = () => {
           date: '09/08/2026',
           type: 'DAÑO_REPARACION',
           notes: 'Dato ficticio para prueba: daños totales $800.000.',
+          repairTracking: {
+            provider: 'Maestro Demo Full',
+            providerPhone: '+56 9 0000 0690',
+            providerEmail: 'maestro.full@example.com',
+            responsible: 'Gestor de Liquidaciones',
+            status: 'TERMINADA',
+            commitmentDate: '11/08/2026',
+            notes: 'Dato ficticio para mantener coherencia del caso demo.'
+          },
           documents: [],
           photos: []
         },

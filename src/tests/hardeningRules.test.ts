@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import type { GuaranteeCase, SystemSettings } from '../types';
-import { calculateGuaranteeFinances } from '../utils/calculations';
-import { isCaseCompleted } from '../context/AppContext';
+import { calculateFundingReadiness, calculateGuaranteeFinances, canConfirmGuaranteeLiquidation } from '../utils/calculations';
+import { formatDate, getLocalDateInputValue, parseLocalDate } from '../utils/formatters';
+import { isCaseCompleted, normalizeClosedOwnerPending } from '../context/AppContext';
 
 const settings = {
   maxLiquidationDays: 60,
@@ -151,4 +152,104 @@ assert.equal(isCaseCompleted({
   }
 }, settings), true);
 
-console.log('✓ Reglas de hardening, cargos, diferimiento y seguimiento posterior propietario validadas');
+// Un seguimiento posterior no puede completar por sí solo una garantía reabierta.
+const postCloseOnly = {
+  ...ownerServicesPending,
+  isClosed: false,
+  ownerPostClosePending: {
+    amountAtTransfer: 200000,
+    reason: 'Pendiente previo',
+    nextReviewDate: '15/09/2026',
+    responsible: 'Usuario',
+    transferredAt: '2026-08-12T03:00:00.000Z',
+    transferredBy: 'ADMINISTRADOR',
+    status: 'PENDIENTE' as const
+  }
+};
+assert.equal(isCaseCompleted(postCloseOnly, settings), false);
+
+// Si la cobranza ya es incobrable y el propietario asume servicios, el pago cubre
+// la obligación operativa aunque no quede un monto recuperable para el propietario.
+const ownerCostAfterWriteOff = {
+  ...ownerServicesPending,
+  ownerContribution: 0,
+  movements: [
+    {
+      id: 'MOV-PROP-POST', caseId: ownerServicesPending.id, date: '12/08/2026', time: '10:00',
+      type: 'APORTE_PROPIETARIO' as const, ownerPaymentPurpose: 'SERVICIOS' as const,
+      ownerPaymentMode: 'PAGADO_DIRECTO' as const, description: 'Pago servicios', amount: 200000,
+      user: 'Usuario', reference: 'POST', observation: ''
+    },
+    {
+      id: 'MOV-CAST-POST', caseId: ownerServicesPending.id, date: '12/08/2026', time: '10:00',
+      type: 'CASTIGO_PROPIETARIO' as const, description: 'Costo definitivo propietario', amount: 200000,
+      user: 'Usuario', reference: 'CAST', observation: ''
+    }
+  ]
+};
+assert.equal(calculateFundingReadiness(ownerCostAfterWriteOff, settings).ownerServicePending, 0);
+assert.equal(isCaseCompleted(ownerCostAfterWriteOff, settings), true);
+
+// Fechas de calendario: YYYY-MM-DD se interpreta localmente y los ISO completos se formatean bien.
+const localSample = new Date(2026, 7, 12, 23, 30, 0);
+assert.equal(getLocalDateInputValue(localSample), '2026-08-12');
+assert.equal(parseLocalDate('2026-08-12')?.getDate(), 12);
+assert.equal(formatDate('2026-08-12T03:00:00.000Z'), '12/08/2026');
+
+const legacyClosedDeferred = {
+  ...ownerServicesPending,
+  isClosed: true,
+  closedBy: 'ADMINISTRADOR',
+  ownerServiceDeferral: {
+    amountAtDeferral: 200000,
+    reason: 'Pagar al próximo arriendo',
+    nextReviewDate: '15/09/2026',
+    responsible: 'Usuario',
+    createdAt: '2026-08-12T01:00:00.000Z',
+    createdBy: 'ADMINISTRADOR'
+  }
+};
+const migratedClosed = normalizeClosedOwnerPending(legacyClosedDeferred);
+assert.equal(migratedClosed.ownerServiceDeferral, undefined);
+assert.equal(migratedClosed.ownerPostClosePending?.amountAtTransfer, 200000);
+assert.equal(migratedClosed.ownerPostClosePending?.status, 'PENDIENTE');
+assert.equal(isCaseCompleted(migratedClosed, settings), true);
+
+// Confirmar la liquidación exige que la preparación física esté lista.
+assert.equal(canConfirmGuaranteeLiquidation({ ...base, preparationStatus: 'REPARANDO' }, settings), false);
+assert.equal(canConfirmGuaranteeLiquidation({ ...base, preparationStatus: 'LISTA' }, settings), true);
+
+// Un resultado emitido con devolución no puede completarse si falta registrar la transferencia.
+const emittedSurplus = {
+  ...base,
+  liquidationStatus: 'EMITIDA' as const,
+  guaranteeAmount: 500000,
+  charges: [{
+    id: 'CHG-SURPLUS', category: 'GASTOS_COMUNES' as const, description: 'Cargo final', amount: 400000,
+    date: '12/08/2026', type: 'GASTO_COMUN' as const, notes: '', documents: [], photos: []
+  }],
+  refund: undefined,
+  receivableStatus: undefined
+};
+assert.equal(isCaseCompleted(emittedSurplus, settings), false);
+assert.equal(isCaseCompleted({
+  ...emittedSurplus,
+  refund: { amount: 100000, status: 'TRANSFERIDA' as const }
+}, settings), true);
+
+// Un déficit emitido tampoco puede completarse si, por inconsistencia, falta su estado de cobranza.
+const deferredOwnerServices = {
+  amountAtDeferral: 200000,
+  reason: 'Pago posterior',
+  nextReviewDate: '15/09/2026',
+  responsible: 'Usuario',
+  createdAt: '2026-08-12T01:00:00.000Z',
+  createdBy: 'ADMINISTRADOR'
+};
+assert.equal(isCaseCompleted({
+  ...ownerServicesPending,
+  receivableStatus: undefined,
+  ownerServiceDeferral: deferredOwnerServices
+}, settings), false);
+
+console.log('✓ Reglas de hardening, confirmación, acciones financieras, fechas, migraciones e incobrables validadas');

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
-import { formatCLP, formatDate } from '../utils/formatters';
+import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
 import { Banknote, CheckCircle2, Clock3, ShieldCheck, WalletCards, X } from 'lucide-react';
 
 type OwnerPaymentPurpose = 'REPARACIONES' | 'SERVICIOS';
@@ -30,7 +30,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const [paymentPurpose, setPaymentPurpose] = useState<OwnerPaymentPurpose>('SERVICIOS');
   const [paymentMode, setPaymentMode] = useState<OwnerPaymentMode>('TRANSFERIDO_FAUNA');
   const [paymentAmount, setPaymentAmount] = useState(0);
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(getLocalDateInputValue());
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentError, setPaymentError] = useState('');
@@ -66,7 +66,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
     setPaymentPurpose(purpose);
     setPaymentMode('TRANSFERIDO_FAUNA');
     setPaymentAmount(pending);
-    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentDate(getLocalDateInputValue());
     setPaymentReference('');
     setPaymentNotes('');
     setPaymentError('');
@@ -98,6 +98,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
       ? 'Transferido a Fauna'
       : 'Pagado directamente por el propietario';
     const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    const collectionIsUncollectible = guaranteeCase.receivableStatus === 'INCOBRABLE';
 
     const resolvesPostClosePending = Boolean(
       guaranteeCase.isClosed
@@ -108,7 +109,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
     updateGuaranteeCase(guaranteeCase.id, {
       // Este saldo representa lo efectivamente asumido por el propietario y todavía no recuperado.
-      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount,
+      ownerContribution: collectionIsUncollectible
+        ? (guaranteeCase.ownerContribution || 0)
+        : (guaranteeCase.ownerContribution || 0) + paymentAmount,
       ownerPostClosePending: guaranteeCase.ownerPostClosePending
         ? {
             ...guaranteeCase.ownerPostClosePending,
@@ -145,30 +148,70 @@ export const FullCoverageCaseBanner: React.FC = () => {
       observation: [
         `Modalidad: ${modeLabel}`,
         `Destino: ${purposeLabel}`,
-        paymentMode === 'PAGADO_DIRECTO'
-          ? 'Fauna no recibió estos fondos; se registra porque el propietario ya asumió este costo y debe recuperarse si posteriormente paga el arrendatario.'
-          : 'Fauna recibió estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',
+        collectionIsUncollectible
+          ? 'La cobranza del arrendatario ya está cerrada como incobrable; este monto queda asumido definitivamente por el propietario.'
+          : paymentMode === 'PAGADO_DIRECTO'
+            ? 'Fauna no recibió estos fondos; se registra porque el propietario ya asumió este costo y debe recuperarse si posteriormente paga el arrendatario.'
+            : 'Fauna recibió estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',
         paymentNotes.trim()
       ].filter(Boolean).join(' · ')
     });
+
+    if (collectionIsUncollectible) {
+      addFinancialMovement(guaranteeCase.id, {
+        date: formatDate(paymentDate),
+        time,
+        type: 'CASTIGO_PROPIETARIO',
+        description: 'Monto asumido por propietario después de cerrar cobranza como incobrable',
+        amount: paymentAmount,
+        user: userRole,
+        reference: `CASTIGO-POST-${guaranteeCase.id}-${Date.now()}`,
+        observation: 'No se incorpora a montos por recuperar porque la cobranza del arrendatario ya estaba cerrada como incobrable.'
+      });
+    }
 
     setPaymentModalOpen(false);
   };
 
   const openServiceDeferral = () => {
-    if (!isConfirmed || guaranteeCase.isClosed || servicesPending <= 0) return;
-    setDeferralReason(guaranteeCase.ownerServiceDeferral?.reason || '');
-    setDeferralDate(guaranteeCase.ownerServiceDeferral?.nextReviewDate || '');
-    setDeferralResponsible(guaranteeCase.ownerServiceDeferral?.responsible || guaranteeCase.responsible || '');
+    if (!isConfirmed || servicesPending <= 0) return;
+    const currentFollowUp = guaranteeCase.isClosed
+      ? guaranteeCase.ownerPostClosePending
+      : guaranteeCase.ownerServiceDeferral;
+    if (guaranteeCase.isClosed && !currentFollowUp) return;
+
+    setDeferralReason(currentFollowUp?.reason || '');
+    setDeferralDate(currentFollowUp?.nextReviewDate || '');
+    setDeferralResponsible(currentFollowUp?.responsible || guaranteeCase.responsible || '');
     setDeferralError('');
     setDeferralModalOpen(true);
   };
 
   const registerServiceDeferral = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!isConfirmed || guaranteeCase.isClosed || servicesPending <= 0) return;
+    if (!isConfirmed || servicesPending <= 0) return;
     if (!deferralReason.trim() || !deferralDate || !deferralResponsible) {
       setDeferralError('Indica el acuerdo/motivo, la próxima fecha de revisión y el responsable.');
+      return;
+    }
+
+    if (guaranteeCase.isClosed) {
+      const existingPostClose = guaranteeCase.ownerPostClosePending;
+      if (!existingPostClose || existingPostClose.status !== 'PENDIENTE') return;
+      updateGuaranteeCase(guaranteeCase.id, {
+        ownerPostClosePending: {
+          ...existingPostClose,
+          reason: deferralReason.trim(),
+          nextReviewDate: deferralDate,
+          responsible: deferralResponsible
+        }
+      });
+      logAudit(
+        guaranteeCase.id,
+        'Seguimiento posterior actualizado',
+        `${formatCLP(servicesPending)} pendientes del propietario · ${deferralReason.trim()} · próxima revisión ${formatDate(deferralDate)} · responsable ${deferralResponsible}`
+      );
+      setDeferralModalOpen(false);
       return;
     }
 
@@ -328,9 +371,9 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <button type="button" onClick={() => openOwnerPayment('SERVICIOS')} className="px-3.5 py-2 rounded-xl bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer">
                 <Banknote className="w-4 h-4" /> Registrar pago
               </button>
-              {isConfirmed && !guaranteeCase.isClosed && (
+              {isConfirmed && (!guaranteeCase.isClosed || postClosePending) && (
                 <button type="button" onClick={openServiceDeferral} className="px-3.5 py-2 rounded-xl bg-sky-100/10 border border-sky-200/40 text-white hover:bg-sky-100/20 text-xs font-extrabold cursor-pointer">
-                  {activeServiceDeferral ? 'Editar pendiente' : 'Dejar pendiente'}
+                  {guaranteeCase.isClosed ? 'Actualizar seguimiento' : activeServiceDeferral ? 'Editar pendiente' : 'Dejar pendiente'}
                 </button>
               )}
             </div>
@@ -355,7 +398,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
           <div className="bg-white text-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div>
-                <h3 className="font-bold text-base">Dejar pendiente del propietario</h3>
+                <h3 className="font-bold text-base">{guaranteeCase.isClosed ? 'Actualizar seguimiento posterior' : 'Dejar pendiente del propietario'}</h3>
                 <p className="text-xs text-slate-300 mt-0.5">Gastos comunes/servicios · {formatCLP(servicesPending)}</p>
               </div>
               <button type="button" onClick={() => setDeferralModalOpen(false)} className="p-1 text-slate-400 hover:text-white cursor-pointer">
@@ -364,7 +407,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
             </div>
             <form onSubmit={registerServiceDeferral} className="p-6 space-y-4 text-xs">
               <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 text-[11px] text-sky-950">
-                La liquidación puede cerrarse sin registrar un pago ficticio. El saldo seguirá visible como pendiente del propietario hasta que se cubra efectivamente.
+                {guaranteeCase.isClosed ? 'Este seguimiento permanece activo aunque la garantía y el contrato estén cerrados. Actualiza cuándo y quién debe revisarlo.' : 'La liquidación puede cerrarse sin registrar un pago ficticio. El saldo seguirá visible como pendiente del propietario hasta que se cubra efectivamente.'}
               </div>
               <div>
                 <label className="block font-bold text-slate-800 mb-1">Acuerdo / motivo *</label>

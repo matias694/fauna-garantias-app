@@ -115,6 +115,7 @@ const printSource = readFileSync(new URL('../utils/printElementAsPdf.ts', import
 for (const source of [tenantDocSource, ownerDocSource]) {
   assert.match(source, /liquidationSnapshot/);
   assert.match(source, /printElementAsPdf/);
+  assert.match(source, /snapshot \? snapshot\.charges : guaranteeCase\.charges\.filter/);
   assert.doesNotMatch(source, /buildTenantLiquidationPdf|buildOwnerLiquidationPdf/);
 }
 assert.match(printSource, /@page \{ size: A4; margin: 0; \}/);

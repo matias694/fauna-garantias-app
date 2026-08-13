@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
-import { formatCLP, calculateDaysDifference } from '../utils/formatters';
+import { formatCLP, calculateDaysDifference, parseLocalDate } from '../utils/formatters';
 import { calculateFundingReadiness } from '../utils/calculations';
 import {
   CheckCircle2,
@@ -23,17 +23,7 @@ export const Dashboard: React.FC = () => {
   const activeCases = openCases.filter(c => !c.isCompleted);
   const completedPendingClose = openCases.filter(c => c.isCompleted);
 
-  const parseDateStr = (dateStr?: string): Date | null => {
-    if (!dateStr) return null;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
-      }
-    }
-    const parsed = new Date(dateStr);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
+  const parseDateStr = parseLocalDate;
 
   const isOverdue = (dateStr?: string) => {
     const d = parseDateStr(dateStr);

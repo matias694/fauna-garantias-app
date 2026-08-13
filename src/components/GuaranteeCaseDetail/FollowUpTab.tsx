@@ -39,9 +39,9 @@ export const FollowUpTab: React.FC<FollowUpTabProps> = ({ guaranteeCase }) => {
     addFollowUpComment(guaranteeCase.id, {
       comment: commentText.trim(),
       area,
-      nextManagement: hasNextManagement ? nextManagement.trim() : undefined,
-      nextManagementDate: hasNextManagement ? nextManagementDate : undefined,
-      nextManagementResponsible: hasNextManagement ? nextManagementResponsible : undefined
+      nextManagement: !guaranteeCase.isClosed && hasNextManagement ? nextManagement.trim() : undefined,
+      nextManagementDate: !guaranteeCase.isClosed && hasNextManagement ? nextManagementDate : undefined,
+      nextManagementResponsible: !guaranteeCase.isClosed && hasNextManagement ? nextManagementResponsible : undefined
     });
 
     setCommentText('');
@@ -140,10 +140,14 @@ export const FollowUpTab: React.FC<FollowUpTabProps> = ({ guaranteeCase }) => {
                 </select>
               </div>
               <div className="pt-1">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                  <input type="checkbox" checked={hasNextManagement} onChange={(e) => setHasNextManagement(e.target.checked)} className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4" />
-                  <span>¿Programar Próxima Gestión?</span>
-                </label>
+                {!guaranteeCase.isClosed ? (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={hasNextManagement} onChange={(e) => setHasNextManagement(e.target.checked)} className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4" />
+                    <span>¿Programar Próxima Gestión?</span>
+                  </label>
+                ) : (
+                  <span className="text-[11px] text-slate-500">Caso cerrado: la próxima revisión del pendiente del propietario se administra desde Liquidación.</span>
+                )}
               </div>
             </div>
           </div>

@@ -73,6 +73,15 @@ export const ExactBalanceDemoSeeder: React.FC = () => {
       date: '09/08/2026',
       type: 'DAÑO_REPARACION',
       notes: 'Dato ficticio: el total de cargos coincide exactamente con la garantía.',
+      repairTracking: {
+        provider: 'Maestro Demo Exacto',
+        providerPhone: '+56 9 0000 0590',
+        providerEmail: 'maestro.exacto@example.com',
+        responsible: 'Gestor de Liquidaciones',
+        status: 'TERMINADA',
+        commitmentDate: '09/08/2026',
+        notes: 'Dato ficticio para mantener coherencia del caso demo.'
+      },
       documents: [],
       photos: []
     });

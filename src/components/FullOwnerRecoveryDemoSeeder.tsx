@@ -65,6 +65,15 @@ export const FullOwnerRecoveryDemoSeeder: React.FC = () => {
           date: '11/08/2026',
           type: 'DAÑO_REPARACION',
           notes: 'Caso ficticio: garantía $400.000 + Full $400.000; propietario debe aportar $150.000 para completar reparaciones.',
+          repairTracking: {
+            provider: 'Maestro Demo Recuperaciones',
+            providerPhone: '+56 9 0000 0790',
+            providerEmail: 'maestro.recuperaciones@example.com',
+            responsible: 'Gestor de Liquidaciones',
+            status: 'TERMINADA',
+            commitmentDate: '11/08/2026',
+            notes: 'Dato ficticio para mantener coherencia del caso demo.'
+          },
           documents: [],
           photos: []
         },

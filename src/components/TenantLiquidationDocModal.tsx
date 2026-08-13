@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
-import { formatCLP, formatDate } from '../utils/formatters';
+import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
 import { calculateGuaranteeFinances, isChargeIncludedInLiquidation } from '../utils/calculations';
 import { printElementAsPdf } from '../utils/printElementAsPdf';
 import { FaunaIsotipo } from './FaunaBrand';
@@ -26,9 +26,11 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
   const liveFin = calculateGuaranteeFinances(guaranteeCase, settings);
   const snapshot = guaranteeCase.liquidationSnapshot;
   const isDraft = guaranteeCase.liquidationStatus !== 'EMITIDA' || !snapshot;
-  const charges = (snapshot?.charges || guaranteeCase.charges).filter(isChargeIncludedInLiquidation);
-  const issueDate = snapshot?.issuedDate || formatDate(new Date().toISOString().split('T')[0]);
+  const charges = snapshot ? snapshot.charges : guaranteeCase.charges.filter(isChargeIncludedInLiquidation);
+  const issueDate = snapshot?.issuedDate || formatDate(getLocalDateInputValue());
   const documentNumber = snapshot?.tenantDocumentNumber || `LIQ-AR-${guaranteeCase.id}`;
+  const faunaAddress = snapshot?.faunaAddress || settings.faunaAddress;
+  const faunaRut = snapshot?.faunaRut || settings.faunaRut;
 
   const guaranteeAmount = snapshot?.financials.guaranteeAmount ?? liveFin.guaranteeAmount;
   const totalCharges = snapshot?.financials.totalCharges ?? liveFin.totalCharges;
@@ -82,7 +84,7 @@ export const TenantLiquidationDocModal: React.FC<TenantLiquidationDocModalProps>
               </div>
               <div>
                 <h1 className="font-extrabold text-xl tracking-tight text-[#1E382B]">FAUNA PROPIEDADES</h1>
-                <p className="text-[11px] text-slate-500 font-medium">{settings.faunaAddress} • RUT: {settings.faunaRut}</p>
+                <p className="text-[11px] text-slate-500 font-medium">{faunaAddress} • RUT: {faunaRut}</p>
               </div>
             </div>
 

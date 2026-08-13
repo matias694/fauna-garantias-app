@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatCLP, formatDate } from '../utils/formatters';
+import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
 import { calculateFundingReadiness } from '../utils/calculations';
 
 /**
@@ -38,7 +38,7 @@ export const CompletedCaseSync: React.FC = () => {
 
       const collectionResolved = c.receivableStatus === 'PAGADA' || c.receivableStatus === 'INCOBRABLE';
       const hasUnrelatedBlock = c.blockedBy !== 'SIN_BLOQUEO' && c.blockedBy !== 'ARRENDATARIO';
-      const today = formatDate(new Date().toISOString().split('T')[0]);
+      const today = formatDate(getLocalDateInputValue());
 
       // Cuando termina la cobranza, su bloqueo y su próxima gestión dejan de aplicar.
       // Si existe un bloqueo distinto (propietario, documento, proveedor, etc.), se preserva.
