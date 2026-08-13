@@ -875,7 +875,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCases(prev => prev.map(c => c.id === caseId ? {
       ...c,
       isClosed: true,
-      closedAt: new Date().toLocaleString('es-CL'),
+      closedAt: new Date().toISOString(),
       closedBy: userRole,
       isCompleted: true,
       ownerPostClosePending: postClosePending,
