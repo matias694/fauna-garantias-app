@@ -2,11 +2,8 @@ import { Charge, GuaranteeCase, SystemSettings } from '../types';
 
 export interface FinancialCalculationResult {
   guaranteeAmount: number;
-  /** Cargos positivos antes de abonos. */
   grossCharges: number;
-  /** Abonos ya recibidos del arrendatario. Se imputan primero a GC/servicios. */
   tenantCredits: number;
-  /** Neto cargos - abonos. Puede ser negativo si hay más fondos abonados que cargos. */
   totalCharges: number;
   damageCharges: number;
   serviceCharges: number;
@@ -62,7 +59,6 @@ export interface OwnerLiquidationReconciliation {
   reconciliationBalance: number;
 }
 
-/** Fuente única para decidir si una fila forma parte del documento/cálculo económico. */
 export function isChargeIncludedInLiquidation(ch: Charge): boolean {
   if (ch.amount < 0) return true;
   if (ch.amount <= 0) return false;
@@ -70,13 +66,6 @@ export function isChargeIncludedInLiquidation(ch: Charge): boolean {
   return true;
 }
 
-/**
- * Regla económica de cargos y abonos:
- * - CARGO: monto positivo que aumenta lo que debe cubrir la salida.
- * - ABONO: monto negativo que representa el proporcional de GC/servicios ya recibido.
- * - Una reparación CANCELADA queda en la trazabilidad operativa, pero no forma parte
- *   del resultado económico ni de los documentos de liquidación.
- */
 export function calculateGuaranteeFinances(
   c: GuaranteeCase,
   _settings: SystemSettings
@@ -103,11 +92,9 @@ export function calculateGuaranteeFinances(
   const grossCharges = damageCharges + serviceCharges;
   const totalCharges = grossCharges - tenantCredits;
   const rawBalance = guaranteeAmount + tenantCredits - grossCharges;
-
   const isSurplus = rawBalance > 0;
   const isExact = rawBalance === 0;
   const isInsufficient = rawBalance < 0;
-
   const refundToTenant = isSurplus ? rawBalance : 0;
   const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
 
@@ -219,10 +206,14 @@ export function calculateFundingReadiness(
     Math.max(0, ownerServiceRequired - ownerServiceFundedTotal),
     tenantUnallocatedPayments
   );
-  const ownerServicePending = Math.max(
+  const rawOwnerServicePending = Math.max(
     0,
     ownerServiceRequired - ownerServiceFundedTotal - ownerServiceSettledFromTenant
   );
+
+  // Los servicios no financiados por Fauna son informativos: una vez emitida la
+  // liquidación ya no generan una tarea pendiente ni bloquean el cierre del caso.
+  const ownerServicePending = c.liquidationStatus === 'EMITIDA' ? 0 : rawOwnerServicePending;
 
   const fullCoverageExecutionMovements = sumPositiveMovements(c, 'FINANCIAMIENTO_FAUNA');
   const faunaRecoveries = sumPositiveMovements(c, 'RECUPERACION_FAUNA');
@@ -251,7 +242,6 @@ export function calculateFundingReadiness(
     readyToConfirm: ownerRepairPendingProvision === 0
   };
 }
-
 
 export function canConfirmGuaranteeLiquidation(
   c: GuaranteeCase,
