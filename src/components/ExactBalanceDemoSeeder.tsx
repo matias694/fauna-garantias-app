@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useLayoutEffect } from 'react';
 import type { GuaranteeCase, Charge, AdministrationPlan, LiquidationRequirement } from '../types';
 
 const RESET_MARKER = 'fauna_guarantees_demo_v4_reset_done';
@@ -177,12 +177,19 @@ export const freshCases: GuaranteeCase[] = [
 ];
 
 /**
- * Compatibilidad transitoria para builds que todavía monten este componente.
- * La fuente real de los casos QA v4 ahora se carga directamente desde AppContext.
+ * Migración de datos QA v4.
+ * useLayoutEffect evita que los useEffect de persistencia del AppProvider vuelvan a
+ * escribir los casos antiguos antes de la recarga.
  */
 export const DemoDataV3Reset: React.FC = () => {
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (localStorage.getItem(RESET_MARKER) === '1') return;
+
+    localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(freshCases));
+    localStorage.setItem('fauna_receivables_v2', JSON.stringify([]));
+    localStorage.setItem('fauna_audit_logs_v2', JSON.stringify([]));
     localStorage.setItem(RESET_MARKER, '1');
+    window.location.reload();
   }, []);
 
   return null;
