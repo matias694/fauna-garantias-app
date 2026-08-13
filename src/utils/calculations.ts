@@ -1,88 +1,41 @@
 import { Charge, GuaranteeCase, SystemSettings } from '../types';
 
 export interface FinancialCalculationResult {
-  guaranteeAmount: number;
-  /** Cargos positivos antes de abonos. */
-  grossCharges: number;
-  /** Abonos ya recibidos del arrendatario. Se imputan primero a GC/servicios. */
-  tenantCredits: number;
-  /** Neto cargos - abonos. Puede ser negativo si hay más fondos abonados que cargos. */
-  totalCharges: number;
-  damageCharges: number;
-  serviceCharges: number;
-  rawBalance: number;
-  guaranteeUsed: number;
-  guaranteeForDamage: number;
-  guaranteeForServices: number;
-  creditsForServices: number;
-  creditsForDamage: number;
-  creditsForFaunaRecovery: number;
-  tenantCreditsUnapplied: number;
-  isSurplus: boolean;
-  isExact: boolean;
-  isInsufficient: boolean;
-  refundToTenant: number;
-  tenantDeficit: number;
-  fullCoverageLimit: number;
-  fullCoverageApplied: number;
-  ownerRepairFundingRequired: number;
-  ownerServiceObligation: number;
-  ownerContributionRequired: number;
-  faunaFinancingRequired: number;
-  tenantReceivableAmount: number;
+  guaranteeAmount: number; grossCharges: number; tenantCredits: number; totalCharges: number;
+  damageCharges: number; serviceCharges: number; rawBalance: number; guaranteeUsed: number;
+  guaranteeForDamage: number; guaranteeForServices: number; creditsForServices: number;
+  creditsForDamage: number; creditsForFaunaRecovery: number; tenantCreditsUnapplied: number;
+  isSurplus: boolean; isExact: boolean; isInsufficient: boolean; refundToTenant: number;
+  tenantDeficit: number; fullCoverageLimit: number; fullCoverageApplied: number;
+  ownerRepairFundingRequired: number; ownerServiceObligation: number;
+  ownerContributionRequired: number; faunaFinancingRequired: number; tenantReceivableAmount: number;
 }
 
 export interface FundingReadiness {
-  ownerRequired: number;
-  ownerProvisionedTotal: number;
-  ownerPendingProvision: number;
-  ownerRepairRequired: number;
-  ownerRepairFundedTotal: number;
-  ownerRepairPendingProvision: number;
-  ownerServiceRequired: number;
-  ownerServiceFundedTotal: number;
-  ownerServiceSettledFromTenant: number;
-  ownerServicePending: number;
-  fullCoverageRequired: number;
-  fullCoverageExecutedTotal: number;
-  fullCoveragePendingExecution: number;
+  ownerRequired: number; ownerProvisionedTotal: number; ownerPendingProvision: number;
+  ownerRepairRequired: number; ownerRepairFundedTotal: number; ownerRepairPendingProvision: number;
+  ownerServiceRequired: number; ownerServiceFundedTotal: number; ownerServiceSettledFromTenant: number;
+  ownerServicePending: number; ownerServiceInformationalPending: number;
+  fullCoverageRequired: number; fullCoverageExecutedTotal: number; fullCoveragePendingExecution: number;
   readyToConfirm: boolean;
 }
 
 export interface OwnerLiquidationReconciliation {
-  ownerContributionRequired: number;
-  ownerContributionFundedTotal: number;
-  ownerContributionApplied: number;
-  ownerContributionPending: number;
-  ownerRepairFundingRequired: number;
-  ownerRepairPending: number;
-  ownerServiceObligation: number;
-  ownerServicePending: number;
-  refundToTenant: number;
-  reconciliationBalance: number;
+  ownerContributionRequired: number; ownerContributionFundedTotal: number;
+  ownerContributionApplied: number; ownerContributionPending: number;
+  ownerRepairFundingRequired: number; ownerRepairPending: number;
+  ownerServiceObligation: number; ownerServicePending: number;
+  refundToTenant: number; reconciliationBalance: number;
 }
 
-/** Fuente única para decidir si una fila forma parte del documento/cálculo económico. */
 export function isChargeIncludedInLiquidation(ch: Charge): boolean {
   if (ch.amount < 0) return true;
   if (ch.amount <= 0) return false;
-  if (ch.type === 'DAÑO_REPARACION' && ch.repairTracking?.status === 'CANCELADA') return false;
-  return true;
+  return !(ch.type === 'DAÑO_REPARACION' && ch.repairTracking?.status === 'CANCELADAR');
 }
 
-/**
- * Regla económica de cargos y abonos:
- * - CARGO: monto positivo que aumenta lo que debe cubrir la salida.
- * - ABONO: monto negativo que representa el proporcional de GC/servicios ya recibido.
- * - Una reparación CANCELADA queda en la trazabilidad operativa, pero no forma parte
- *   del resultado económico ni de los documentos de liquidación.
- */
-export function calculateGuaranteeFinances(
-  c: GuaranteeCase,
-  _settings: SystemSettings
-): FinancialCalculationResult {
+export function calculateGuaranteeFinances(c: GuaranteeCase, _settings: SystemSettings): FinancialCalculationResult {
   const guaranteeAmount = Math.max(0, c.guaranteeAmount || 0);
-
   let damageCharges = 0;
   let serviceCharges = 0;
   let tenantCredits = 0;
@@ -90,12 +43,7 @@ export function calculateGuaranteeFinances(
   (c.charges || []).forEach(ch => {
     if (!isChargeIncludedInLiquidation(ch)) return;
     const amount = Number(ch.amount) || 0;
-
-    if (amount < 0) {
-      tenantCredits += Math.abs(amount);
-      return;
-    }
-
+    if (amount < 0) { tenantCredits += Math.abs(amount); return; }
     if (ch.type === 'DAÑO_REPARACION') damageCharges += amount;
     else serviceCharges += amount;
   });
@@ -104,21 +52,12 @@ export function calculateGuaranteeFinances(
   const totalCharges = grossCharges - tenantCredits;
   const rawBalance = guaranteeAmount + tenantCredits - grossCharges;
 
-  const isSurplus = rawBalance > 0;
-  const isExact = rawBalance === 0;
-  const isInsufficient = rawBalance < 0;
-
-  const refundToTenant = isSurplus ? rawBalance : 0;
-  const tenantDeficit = isInsufficient ? Math.abs(rawBalance) : 0;
-
   const guaranteeForDamage = Math.min(guaranteeAmount, damageCharges);
   const guaranteeRemainingAfterDamage = Math.max(0, guaranteeAmount - guaranteeForDamage);
   const damageAfterGuarantee = Math.max(0, damageCharges - guaranteeForDamage);
 
   const fullCoverageLimit = c.plan === 'FULL' ? guaranteeAmount : 0;
-  const fullCoverageApplied = c.plan === 'FULL'
-    ? Math.min(fullCoverageLimit, damageAfterGuarantee)
-    : 0;
+  const fullCoverageApplied = c.plan === 'FULL' ? Math.min(fullCoverageLimit, damageAfterGuarantee) : 0;
   const damageAfterGuaranteeAndFull = Math.max(0, damageAfterGuarantee - fullCoverageApplied);
 
   const guaranteeForServices = Math.min(guaranteeRemainingAfterDamage, serviceCharges);
@@ -138,63 +77,36 @@ export function calculateGuaranteeFinances(
   const tenantCreditsUnapplied = creditsRemaining;
 
   const guaranteeUsed = guaranteeForDamage + guaranteeForServices;
-  const ownerContributionRequired = ownerRepairFundingRequired + ownerServiceObligation;
-  const tenantReceivableAmount = tenantDeficit;
+
+  // Si nadie desembolsó este dinero, solo se informa y la garantía puede cerrarse.
+  const ownerContributionRequired = ownerRepairFundingRequired;
+  const tenantReceivableAmount = ownerRepairFundingRequired + faunaFinancingRequired;
+  const refundToTenant = rawBalance > 0 ? rawBalance : 0;
+  const tenantDeficit = tenantReceivableAmount;
+  const isSurplus = refundToTenant > 0;
+  const isInsufficient = tenantDeficit > 0;
+  const isExact = !isSurplus && !isInsufficient;
 
   return {
-    guaranteeAmount,
-    grossCharges,
-    tenantCredits,
-    totalCharges,
-    damageCharges,
-    serviceCharges,
-    rawBalance,
-    guaranteeUsed,
-    guaranteeForDamage,
-    guaranteeForServices,
-    creditsForServices,
-    creditsForDamage,
-    creditsForFaunaRecovery,
-    tenantCreditsUnapplied,
-    isSurplus,
-    isExact,
-    isInsufficient,
-    refundToTenant,
-    tenantDeficit,
-    fullCoverageLimit,
-    fullCoverageApplied,
-    ownerRepairFundingRequired,
-    ownerServiceObligation,
-    ownerContributionRequired,
-    faunaFinancingRequired,
-    tenantReceivableAmount
+    guaranteeAmount, grossCharges, tenantCredits, totalCharges, damageCharges, serviceCharges, rawBalance,
+    guaranteeUsed, guaranteeForDamage, guaranteeForServices, creditsForServices, creditsForDamage,
+    creditsForFaunaRecovery, tenantCreditsUnapplied, isSurplus, isExact, isInsufficient, refundToTenant,
+    tenantDeficit, fullCoverageLimit, fullCoverageApplied, ownerRepairFundingRequired, ownerServiceObligation,
+    ownerContributionRequired, faunaFinancingRequired, tenantReceivableAmount
   };
 }
 
 const sumPositiveMovements = (c: GuaranteeCase, type: GuaranteeCase['movements'][number]['type']) =>
-  (c.movements || [])
-    .filter(m => m.type === type)
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
+  (c.movements || []).filter(m => m.type === type).reduce((sum, m) => sum + Math.max(0, m.amount), 0);
 
-export function calculateFundingReadiness(
-  c: GuaranteeCase,
-  settings: SystemSettings
-): FundingReadiness {
+export function calculateFundingReadiness(c: GuaranteeCase, settings: SystemSettings): FundingReadiness {
   const fin = calculateGuaranteeFinances(c, settings);
-
   const ownerMovements = (c.movements || []).filter(m => m.type === 'APORTE_PROPIETARIO');
   const ownerRecoveries = sumPositiveMovements(c, 'RECUPERACION_PROPIETARIO');
 
-  const explicitRepair = ownerMovements
-    .filter(m => m.ownerPaymentPurpose === 'REPARACIONES')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const explicitServices = ownerMovements
-    .filter(m => m.ownerPaymentPurpose === 'SERVICIOS')
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-  const legacyOwnerFunds = ownerMovements
-    .filter(m => !m.ownerPaymentPurpose)
-    .reduce((sum, m) => sum + Math.max(0, m.amount), 0);
-
+  const explicitRepair = ownerMovements.filter(m => m.ownerPaymentPurpose === 'REPARACIONES').reduce((s, m) => s + Math.max(0, m.amount), 0);
+  const explicitServices = ownerMovements.filter(m => m.ownerPaymentPurpose === 'SERVICIOS').reduce((s, m) => s + Math.max(0, m.amount), 0);
+  const legacyOwnerFunds = ownerMovements.filter(m => !m.ownerPaymentPurpose).reduce((s, m) => s + Math.max(0, m.amount), 0);
   const ownerMovementsTotal = explicitRepair + explicitServices + legacyOwnerFunds;
   const reconstructedLegacyTotal = Math.max(0, (c.ownerContribution || 0) + ownerRecoveries);
   const ownerProvisionedTotal = ownerMovementsTotal > 0 ? ownerMovementsTotal : reconstructedLegacyTotal;
@@ -209,35 +121,26 @@ export function calculateFundingReadiness(
   const ownerServiceRequired = fin.ownerServiceObligation;
   const legacyPool = ownerMovementsTotal > 0 ? legacyOwnerFunds : reconstructedLegacyTotal;
   const legacyRemainingAfterRepairs = Math.max(0, legacyPool - repairFromLegacy);
-  const ownerServiceFundedTotal = Math.min(
-    ownerServiceRequired,
-    explicitServices + legacyRemainingAfterRepairs
-  );
-
+  const ownerServiceFundedTotal = Math.min(ownerServiceRequired, explicitServices + legacyRemainingAfterRepairs);
   const tenantUnallocatedPayments = sumPositiveMovements(c, 'SALDO_PAGO_ARRENDATARIO');
-  const ownerServiceSettledFromTenant = Math.min(
-    Math.max(0, ownerServiceRequired - ownerServiceFundedTotal),
-    tenantUnallocatedPayments
-  );
-  const ownerServicePending = Math.max(
-    0,
-    ownerServiceRequired - ownerServiceFundedTotal - ownerServiceSettledFromTenant
-  );
+  const ownerServiceSettledFromTenant = Math.min(Math.max(0, ownerServiceRequired - ownerServiceFundedTotal), tenantUnallocatedPayments);
+  const ownerServiceInformationalPending = Math.max(0, ownerServiceRequired - ownerServiceFundedTotal - ownerServiceSettledFromTenant);
+
+  // Campo operativo intencionalmente en cero: estos servicios no crean seguimiento.
+  const ownerServicePending = 0;
 
   const fullCoverageExecutionMovements = sumPositiveMovements(c, 'FINANCIAMIENTO_FAUNA');
   const faunaRecoveries = sumPositiveMovements(c, 'RECUPERACION_FAUNA');
   const fullCoverageExecutedTotal = fullCoverageExecutionMovements > 0
     ? fullCoverageExecutionMovements
     : Math.max(0, (c.faunaFinancing || 0) + faunaRecoveries);
-
   const fullCoverageRequired = fin.faunaFinancingRequired;
   const fullCoveragePendingExecution = Math.max(0, fullCoverageRequired - fullCoverageExecutedTotal);
-  const ownerPendingProvision = ownerRepairPendingProvision + ownerServicePending;
 
   return {
     ownerRequired: fin.ownerContributionRequired,
     ownerProvisionedTotal,
-    ownerPendingProvision,
+    ownerPendingProvision: ownerRepairPendingProvision,
     ownerRepairRequired,
     ownerRepairFundedTotal,
     ownerRepairPendingProvision,
@@ -245,6 +148,7 @@ export function calculateFundingReadiness(
     ownerServiceFundedTotal,
     ownerServiceSettledFromTenant,
     ownerServicePending,
+    ownerServiceInformationalPending,
     fullCoverageRequired,
     fullCoverageExecutedTotal,
     fullCoveragePendingExecution,
@@ -252,34 +156,20 @@ export function calculateFundingReadiness(
   };
 }
 
-
-export function canConfirmGuaranteeLiquidation(
-  c: GuaranteeCase,
-  settings: SystemSettings
-): boolean {
+export function canConfirmGuaranteeLiquidation(c: GuaranteeCase, settings: SystemSettings): boolean {
   if (c.liquidationStatus !== 'LISTA') return false;
   if (c.preparationStatus !== 'LISTA') return false;
   if (c.blockedBy !== 'SIN_BLOQUEO') return false;
   return calculateFundingReadiness(c, settings).readyToConfirm;
 }
 
-export function calculateOwnerLiquidationReconciliation(
-  c: GuaranteeCase,
-  settings: SystemSettings
-): OwnerLiquidationReconciliation {
+export function calculateOwnerLiquidationReconciliation(c: GuaranteeCase, settings: SystemSettings): OwnerLiquidationReconciliation {
   const fin = calculateGuaranteeFinances(c, settings);
   const readiness = calculateFundingReadiness(c, settings);
-
   const ownerContributionFundedTotal = readiness.ownerProvisionedTotal;
-  const ownerContributionApplied = readiness.ownerRepairFundedTotal + readiness.ownerServiceFundedTotal;
-  const ownerContributionPending = readiness.ownerRepairPendingProvision + readiness.ownerServicePending;
-
-  const reconciliationBalance =
-    fin.guaranteeAmount
-    - fin.totalCharges
-    + fin.faunaFinancingRequired
-    + ownerContributionApplied
-    - fin.refundToTenant;
+  const ownerContributionApplied = readiness.ownerRepairFundedTotal;
+  const ownerContributionPending = readiness.ownerRepairPendingProvision;
+  const reconciliationBalance = fin.guaranteeAmount - fin.totalCharges + fin.faunaFinancingRequired + ownerContributionApplied - fin.refundToTenant;
 
   return {
     ownerContributionRequired: fin.ownerContributionRequired,
@@ -289,27 +179,19 @@ export function calculateOwnerLiquidationReconciliation(
     ownerRepairFundingRequired: fin.ownerRepairFundingRequired,
     ownerRepairPending: readiness.ownerRepairPendingProvision,
     ownerServiceObligation: fin.ownerServiceObligation,
-    ownerServicePending: readiness.ownerServicePending,
+    ownerServicePending: readiness.ownerServiceInformationalPending,
     refundToTenant: fin.refundToTenant,
     reconciliationBalance
   };
 }
 
-export function calculatePaymentDistribution(
-  paymentAmount: number,
-  ownerContributionToRecover: number,
-  faunaFinancingToRecover: number
-) {
+export function calculatePaymentDistribution(paymentAmount: number, ownerContributionToRecover: number, faunaFinancingToRecover: number) {
   let remainingPayment = Math.max(0, paymentAmount);
-
   const ownerRecovery = Math.min(remainingPayment, ownerContributionToRecover);
   remainingPayment -= ownerRecovery;
-
   const faunaRecovery = Math.min(remainingPayment, faunaFinancingToRecover);
   remainingPayment -= faunaRecovery;
-
   const surplusPayment = remainingPayment;
-
   return {
     paymentAmount,
     ownerRecovery,
