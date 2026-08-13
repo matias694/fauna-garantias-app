@@ -1,0 +1,203 @@
+name: Correcciones finales auditoria
+
+on:
+  push:
+    branches: [auditoria-final-integridad]
+    paths:
+      - .github/workflows/final-hardening-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: auditoria-final-integridad
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Aplicar correcciones
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new, label):
+              p = Path(path); s = p.read_text()
+              if old not in s: raise SystemExit(f'{label} missing in {path}')
+              p.write_text(s.replace(old, new, 1))
+
+          def add_import_symbol(path, symbol):
+              p = Path(path); s = p.read_text()
+              pattern = re.compile(r"import \{([^}]*)\} from '([^']*utils/formatters)';")
+              m = pattern.search(s)
+              if not m: raise SystemExit(f'formatters import missing in {path}')
+              names = [x.strip() for x in m.group(1).split(',') if x.strip()]
+              if symbol not in names:
+                  names.append(symbol)
+                  repl = "import { " + ", ".join(names) + " } from '" + m.group(2) + "';"
+                  s = s[:m.start()] + repl + s[m.end():]
+                  p.write_text(s)
+
+          # 1) Fechas calendario: nunca derivarlas desde UTC.
+          date_files = [
+              'src/context/AppContext.tsx',
+              'src/components/OwnerLiquidationDocModal.tsx',
+              'src/components/RecordPaymentModal.tsx',
+              'src/components/GuaranteeCaseDetail/ChargesTab.tsx',
+              'src/components/GuaranteeCaseDetail/LiquidationTab.tsx',
+              'src/components/FullCoverageCaseBanner.tsx',
+              'src/components/NewGuaranteeModal.tsx',
+              'src/components/CompletedCaseSync.tsx',
+              'src/components/TenantLiquidationDocModal.tsx',
+          ]
+          for path in date_files:
+              p = Path(path); s = p.read_text()
+              s2 = s.replace("new Date().toISOString().split('T')[0]", 'getLocalDateInputValue()')
+              s2 = s2.replace("new Date().toISOString().slice(0, 10)", 'getLocalDateInputValue()')
+              if s2 != s:
+                  p.write_text(s2)
+                  add_import_symbol(path, 'getLocalDateInputValue')
+
+          replace_once('src/context/AppContext.tsx',
+              "    const issuedDate = formatDate(issuedAt.split('T')[0]);\n",
+              "    const issuedDate = formatDate(getLocalDateInputValue());\n",
+              'issued local date')
+
+          # Los listados deben interpretar YYYY-MM-DD como fecha local, no como UTC.
+          for path in ['src/components/Dashboard.tsx','src/components/GuaranteesList.tsx','src/components/ReceivablesList.tsx']:
+              p = Path(path); s = p.read_text()
+              pattern = re.compile(r"  const parseDateStr = \(dateStr\?: string\): Date \| null => \{.*?\n  \};\n\n  const isOverdue", re.S)
+              if not pattern.search(s): raise SystemExit(f'parseDateStr block missing in {path}')
+              s = pattern.sub("  const parseDateStr = parseLocalDate;\n\n  const isOverdue", s, count=1)
+              p.write_text(s)
+              add_import_symbol(path, 'parseLocalDate')
+
+          # 2) Snapshot realmente inmutable: guarda solo filas incluidas y la identidad de Fauna al emitir.
+          p = Path('src/context/AppContext.tsx'); s = p.read_text()
+          s = s.replace(
+              "  calculatePaymentDistribution\n} from '../utils/calculations';",
+              "  calculatePaymentDistribution,\n  isChargeIncludedInLiquidation\n} from '../utils/calculations';",
+              1
+          )
+          s = s.replace("      calculationVersion: '2026-08-v1' as const,", "      calculationVersion: '2026-08-v2' as const,", 1)
+          s = s.replace(
+              "      ownerDocumentNumber: `LIQ-PROP-${targetCase.id}`,\n      propertyAddress:",
+              "      ownerDocumentNumber: `LIQ-PROP-${targetCase.id}`,\n      faunaCompanyName: settings.faunaCompanyName,\n      faunaRut: settings.faunaRut,\n      faunaAddress: settings.faunaAddress,\n      propertyAddress:",
+              1
+          )
+          s = s.replace(
+              "      charges: targetCase.charges.map(ch => ({",
+              "      charges: targetCase.charges.filter(isChargeIncludedInLiquidation).map(ch => ({",
+              1
+          )
+          p.write_text(s)
+
+          replace_once('src/types.ts',
+              "  calculationVersion: '2026-08-v1';\n  issuedAt: string;",
+              "  calculationVersion: '2026-08-v1' | '2026-08-v2';\n  issuedAt: string;",
+              'snapshot version union')
+          replace_once('src/types.ts',
+              "  ownerDocumentNumber: string;\n  propertyAddress: string;",
+              "  ownerDocumentNumber: string;\n  faunaCompanyName?: string;\n  faunaRut?: string;\n  faunaAddress?: string;\n  propertyAddress: string;",
+              'snapshot company fields')
+
+          for path in ['src/components/OwnerLiquidationDocModal.tsx','src/components/TenantLiquidationDocModal.tsx']:
+              p = Path(path); s = p.read_text()
+              s = s.replace(
+                  "  const charges = (snapshot?.charges || guaranteeCase.charges).filter(isChargeIncludedInLiquidation);",
+                  "  const charges = snapshot ? snapshot.charges : guaranteeCase.charges.filter(isChargeIncludedInLiquidation);",
+                  1
+              )
+              marker = "  const documentNumber = snapshot?.ownerDocumentNumber || `LIQ-PROP-${guaranteeCase.id}`;" if 'Owner' in path else "  const documentNumber = snapshot?.tenantDocumentNumber || `LIQ-AR-${guaranteeCase.id}`;"
+              if marker not in s: raise SystemExit(f'document number marker missing in {path}')
+              s = s.replace(marker, marker + "\n  const faunaAddress = snapshot?.faunaAddress || settings.faunaAddress;\n  const faunaRut = snapshot?.faunaRut || settings.faunaRut;", 1)
+              s = s.replace('{settings.faunaAddress} • RUT: {settings.faunaRut}', '{faunaAddress} • RUT: {faunaRut}', 1)
+              p.write_text(s)
+
+          # 3) Un pendiente post-cierre solo satisface completitud si el caso está realmente cerrado.
+          replace_once('src/context/AppContext.tsx',
+              "  const readiness = calculateFundingReadiness(c, settings);\n  if (readiness.ownerServicePending > 0 && !c.ownerServiceDeferral && !c.ownerPostClosePending) return false;\n",
+              "  const readiness = calculateFundingReadiness(c, settings);\n  if (readiness.ownerServicePending > 0) {\n    if (c.isClosed) {\n      if (!c.ownerPostClosePending || c.ownerPostClosePending.status !== 'PENDIENTE') return false;\n    } else if (!c.ownerServiceDeferral) {\n      return false;\n    }\n  }\n",
+              'completion post-close rule')
+          replace_once('src/context/AppContext.tsx',
+              "      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral && !targetCase.ownerPostClosePending) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');\n",
+              "      if (calculateFundingReadiness(targetCase, settings).ownerServicePending > 0 && !targetCase.ownerServiceDeferral) pending.push('gastos comunes/servicios pendientes del propietario sin acuerdo de diferimiento');\n",
+              'close requires active deferral')
+
+          # Reabrir devuelve un seguimiento posterior pendiente al flujo activo de garantía.
+          p = Path('src/context/AppContext.tsx'); s = p.read_text()
+          old = """  const reopenGuaranteeCase = (caseId: string) => {\n    if (userRole !== 'ADMINISTRADOR') return;\n    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({ ...c, isClosed: false }) : c));\n    logAudit(caseId, 'Reapertura de Caso', `Caso ${caseId} reabierto por Administrador`);\n  };\n"""
+          new = """  const reopenGuaranteeCase = (caseId: string) => {\n    if (userRole !== 'ADMINISTRADOR') return;\n    const targetCase = cases.find(c => c.id === caseId);\n    if (!targetCase) return;\n\n    const readiness = calculateFundingReadiness(targetCase, settings);\n    const pendingPostClose = targetCase.ownerPostClosePending?.status === 'PENDIENTE'\n      && readiness.ownerServicePending > 0\n      ? targetCase.ownerPostClosePending\n      : undefined;\n\n    setCases(prev => prev.map(c => c.id === caseId ? withCompletion({\n      ...c,\n      isClosed: false,\n      ownerServiceDeferral: pendingPostClose ? {\n        amountAtDeferral: readiness.ownerServicePending,\n        reason: pendingPostClose.reason,\n        nextReviewDate: pendingPostClose.nextReviewDate,\n        responsible: pendingPostClose.responsible,\n        createdAt: pendingPostClose.transferredAt,\n        createdBy: pendingPostClose.transferredBy\n      } : c.ownerServiceDeferral,\n      ownerPostClosePending: pendingPostClose ? undefined : c.ownerPostClosePending,\n      nextManagement: pendingPostClose ? `Revisar pendiente propietario de ${readiness.ownerServicePending}` : c.nextManagement,\n      nextManagementDate: pendingPostClose ? pendingPostClose.nextReviewDate : c.nextManagementDate,\n      nextManagementResponsible: pendingPostClose ? pendingPostClose.responsible : c.nextManagementResponsible\n    }) : c));\n\n    if (pendingPostClose) {\n      logAudit(caseId, 'Seguimiento posterior reincorporado', 'El pendiente del propietario volvió al flujo activo al reabrir la garantía.');\n    }\n    logAudit(caseId, 'Reapertura de Caso', `Caso ${caseId} reabierto por Administrador`);\n  };\n"""
+          if old not in s: raise SystemExit('reopen function marker missing')
+          p.write_text(s.replace(old, new, 1))
+
+          # 4) Incobrables usan el saldo vigente del caso, no snapshots obsoletos del receivable.
+          replace_once('src/context/AppContext.tsx',
+              "    const ownerWriteOff = Math.max(0, targetRec.ownerContributionToRecover || targetCase?.ownerContribution || 0);\n    const faunaWriteOff = Math.max(0, targetRec.faunaFinancingToRecover || targetCase?.faunaFinancing || 0);\n",
+              "    const ownerWriteOff = targetCase\n      ? Math.max(0, targetCase.ownerContribution || 0)\n      : Math.max(0, targetRec.ownerContributionToRecover || 0);\n    const faunaWriteOff = targetCase\n      ? Math.max(0, targetCase.faunaFinancing || 0)\n      : Math.max(0, targetRec.faunaFinancingToRecover || 0);\n",
+              'writeoff live balances')
+
+          # Si el arrendatario ya fue declarado incobrable, un pago posterior del propietario es costo definitivo, no monto recuperable.
+          p = Path('src/components/FullCoverageCaseBanner.tsx'); s = p.read_text()
+          s = s.replace(
+              "    const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });\n\n    const resolvesPostClosePending",
+              "    const time = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });\n    const collectionIsUncollectible = guaranteeCase.receivableStatus === 'INCOBRABLE';\n\n    const resolvesPostClosePending",
+              1
+          )
+          s = s.replace(
+              "      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount,",
+              "      ownerContribution: collectionIsUncollectible\n        ? (guaranteeCase.ownerContribution || 0)\n        : (guaranteeCase.ownerContribution || 0) + paymentAmount,",
+              1
+          )
+          s = s.replace(
+              "        paymentMode === 'PAGADO_DIRECTO'\n          ? 'Fauna no recibió estos fondos; se registra porque el propietario ya asumió este costo y debe recuperarse si posteriormente paga el arrendatario.'\n          : 'Fauna recibió estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',",
+              "        collectionIsUncollectible\n          ? 'La cobranza del arrendatario ya está cerrada como incobrable; este monto queda asumido definitivamente por el propietario.'\n          : paymentMode === 'PAGADO_DIRECTO'\n            ? 'Fauna no recibió estos fondos; se registra porque el propietario ya asumió este costo y debe recuperarse si posteriormente paga el arrendatario.'\n            : 'Fauna recibió estos fondos para aplicarlos al caso; el monto debe recuperarse al propietario si posteriormente paga el arrendatario.',",
+              1
+          )
+          marker = """    setPaymentModalOpen(false);\n"""
+          insert = """    if (collectionIsUncollectible) {\n      addFinancialMovement(guaranteeCase.id, {\n        date: formatDate(paymentDate),\n        time,\n        type: 'CASTIGO_PROPIETARIO',\n        description: 'Monto asumido por propietario después de cerrar cobranza como incobrable',\n        amount: paymentAmount,\n        user: userRole,\n        reference: `CASTIGO-POST-${guaranteeCase.id}-${Date.now()}`,\n        observation: 'No se incorpora a montos por recuperar porque la cobranza del arrendatario ya estaba cerrada como incobrable.'\n      });\n    }\n\n    setPaymentModalOpen(false);\n"""
+          if marker not in s: raise SystemExit('payment modal close marker missing')
+          p.write_text(s.replace(marker, insert, 1))
+
+          # 5) Pruebas de regresión de las reglas descubiertas.
+          p = Path('src/tests/hardeningRules.test.ts'); s = p.read_text()
+          s = s.replace(
+              "import { calculateGuaranteeFinances } from '../utils/calculations';",
+              "import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';\nimport { formatDate, getLocalDateInputValue, parseLocalDate } from '../utils/formatters';",
+              1
+          )
+          marker = "console.log('✓ Reglas de hardening, cargos, diferimiento y seguimiento posterior propietario validadas');"
+          additions = """// Un seguimiento posterior no puede completar por sí solo una garantía reabierta.\nconst postCloseOnly = {\n  ...ownerServicesPending,\n  isClosed: false,\n  ownerPostClosePending: {\n    amountAtTransfer: 200000,\n    reason: 'Pendiente previo',\n    nextReviewDate: '15/09/2026',\n    responsible: 'Usuario',\n    transferredAt: '2026-08-12T03:00:00.000Z',\n    transferredBy: 'ADMINISTRADOR',\n    status: 'PENDIENTE' as const\n  }\n};\nassert.equal(isCaseCompleted(postCloseOnly, settings), false);\n\n// Si la cobranza ya es incobrable y el propietario asume servicios, el pago cubre\n// la obligación operativa aunque no quede un monto recuperable para el propietario.\nconst ownerCostAfterWriteOff = {\n  ...ownerServicesPending,\n  ownerContribution: 0,\n  movements: [\n    {\n      id: 'MOV-PROP-POST', caseId: ownerServicesPending.id, date: '12/08/2026', time: '10:00',\n      type: 'APORTE_PROPIETARIO' as const, ownerPaymentPurpose: 'SERVICIOS' as const,\n      ownerPaymentMode: 'PAGADO_DIRECTO' as const, description: 'Pago servicios', amount: 200000,\n      user: 'Usuario', reference: 'POST', observation: ''\n    },\n    {\n      id: 'MOV-CAST-POST', caseId: ownerServicesPending.id, date: '12/08/2026', time: '10:00',\n      type: 'CASTIGO_PROPIETARIO' as const, description: 'Costo definitivo propietario', amount: 200000,\n      user: 'Usuario', reference: 'CAST', observation: ''\n    }\n  ]\n};\nassert.equal(calculateFundingReadiness(ownerCostAfterWriteOff, settings).ownerServicePending, 0);\nassert.equal(isCaseCompleted(ownerCostAfterWriteOff, settings), true);\n\n// Fechas de calendario: YYYY-MM-DD se interpreta localmente y los ISO completos se formatean bien.\nconst localSample = new Date(2026, 7, 12, 23, 30, 0);\nassert.equal(getLocalDateInputValue(localSample), '2026-08-12');\nassert.equal(parseLocalDate('2026-08-12')?.getDate(), 12);\nassert.equal(formatDate('2026-08-12T03:00:00.000Z'), '12/08/2026');\n\nconsole.log('✓ Reglas de hardening, fechas, incobrables y seguimiento posterior validadas');"""
+          if marker not in s: raise SystemExit('hardening final marker missing')
+          p.write_text(s.replace(marker, additions, 1))
+
+          # 6) La prueba de snapshot exige fuente congelada sin volver a filtrar snapshot con reglas futuras.
+          p = Path('src/tests/liquidationSnapshot.test.ts'); s = p.read_text()
+          s = s.replace(
+              "  assert.match(source, /printElementAsPdf/);",
+              "  assert.match(source, /printElementAsPdf/);\n  assert.match(source, /snapshot \? snapshot\.charges : guaranteeCase\.charges\.filter/);",
+              1
+          )
+          p.write_text(s)
+          PY
+
+      - name: Validar cambios
+        run: |
+          npm ci
+          npm run lint
+          npm run test:rules
+          npm run build
+
+      - name: Commit
+        run: |
+          rm -f .github/workflows/audit-final-temp.yml .github/workflows/final-hardening-temp.yml
+          git config user.name 'matias694'
+          git config user.email 'matias@faunapropiedades.cl'
+          git add -A
+          git commit -m 'Corregir fechas, reapertura e incobrables detectados en auditoría'
+          git push origin auditoria-final-integridad
