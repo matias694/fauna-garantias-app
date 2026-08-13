@@ -7,11 +7,6 @@ interface FinancialTracePanelProps {
   guaranteeCase: GuaranteeCase;
 }
 
-const maskLongNumbers = (value: string) => value.replace(/\d{6,}/g, raw => {
-  const last4 = raw.slice(-4);
-  return `${'•'.repeat(Math.max(4, raw.length - 4))}${last4}`;
-});
-
 export const FinancialTracePanel: React.FC<FinancialTracePanelProps> = ({ guaranteeCase }) => {
   const payments = (guaranteeCase.movements || []).filter(m => m.type === 'PAGO_ARRENDATARIO');
   const refundMovement = [...(guaranteeCase.movements || [])].reverse().find(m => m.type === 'DEVOLUCION_ARRENDATARIO');
@@ -36,7 +31,7 @@ export const FinancialTracePanel: React.FC<FinancialTracePanelProps> = ({ guaran
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-1 text-emerald-950">
             <span><strong>Fecha:</strong> {refund.date || refundMovement?.date || 'Sin fecha'}</span>
             <span><strong>Registrado por:</strong> {refund.user || refundMovement?.user || 'Sin registro'}</span>
-            <span><strong>Cuenta destino:</strong> {refund.destinationAccount ? maskLongNumbers(refund.destinationAccount) : 'No registrada'}</span>
+            <span><strong>Cuenta destino:</strong> {refund.destinationAccount || 'No registrada'}</span>
             <span><strong>Referencia:</strong> {refund.voucherName || refundMovement?.reference || 'No registrada'}</span>
           </div>
           {refund.notes && <p className="text-emerald-900"><strong>Observaciones:</strong> {refund.notes}</p>}
@@ -50,7 +45,7 @@ export const FinancialTracePanel: React.FC<FinancialTracePanelProps> = ({ guaran
             <span><strong>Fecha:</strong> {payment.date} {payment.time}</span>
             <span><strong>Registrado por:</strong> {payment.user}</span>
           </div>
-          {payment.observation && <p className="text-slate-700 whitespace-pre-line"><strong>Detalle:</strong> {maskLongNumbers(payment.observation)}</p>}
+          {payment.observation && <p className="text-slate-700 whitespace-pre-line"><strong>Detalle:</strong> {payment.observation}</p>}
         </div>
       ))}
     </div>
