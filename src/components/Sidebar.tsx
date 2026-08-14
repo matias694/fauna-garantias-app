@@ -8,13 +8,20 @@ import {
   Receipt,
   Settings as SettingsIcon,
   ChevronRight,
-  UserCheck,
-  Building2,
   Sparkles
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { activeView, setActiveView, setSelectedCaseId, userRole, setUserRole, cases, receivables } = useApp();
+  const {
+    activeView,
+    setActiveView,
+    setSelectedCaseId,
+    userRole,
+    setUserRole,
+    canSwitchUserRole,
+    cases,
+    receivables
+  } = useApp();
 
   const pendingGuarantees = cases.filter(c => !c.isClosed).length;
   const pendingReceivables = receivables.filter(r => r.pendingBalance > 0 && (r.status === 'PENDIENTE' || r.status === 'PAGO_PARCIAL')).length;
@@ -27,7 +34,6 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-white text-slate-700 flex flex-col justify-between h-screen sticky top-0 border-r border-slate-200/80 shadow-xs select-none z-30">
       <div>
-        {/* Brand Header */}
         <div className="p-5 border-b border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-[#1E382B] text-white flex items-center justify-center p-2 shadow-md shadow-[#1E382B]/20 shrink-0">
             <FaunaIsotipo className="w-full h-full text-white" color="#FFFFFF" />
@@ -45,7 +51,6 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
 
-        {/* Navigation Menu */}
         <nav className="p-3.5 space-y-1.5">
           <button
             onClick={() => handleNav('dashboard')}
@@ -124,9 +129,7 @@ export const Sidebar: React.FC = () => {
         </nav>
       </div>
 
-      {/* Footer Role Switcher & System Info Card */}
       <div className="p-4 border-t border-slate-100 space-y-3">
-        {/* Soft Plan/Role Card */}
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200/70 p-3.5 rounded-2xl">
           <div className="flex items-center gap-2 text-xs font-bold text-[#1E382B] mb-1.5">
             <Sparkles className="w-4 h-4 text-emerald-600" />
@@ -139,15 +142,21 @@ export const Sidebar: React.FC = () => {
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
               Rol Activo
             </label>
-            <select
-              value={userRole}
-              onChange={(e) => setUserRole(e.target.value as UserRole)}
-              className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer shadow-2xs"
-            >
-              <option value="ADMINISTRADOR">Administrador</option>
-              <option value="ADMINISTRACION">Administración</option>
-              <option value="OPERACIONES">Operaciones</option>
-            </select>
+            {canSwitchUserRole ? (
+              <select
+                value={userRole}
+                onChange={(e) => setUserRole(e.target.value as UserRole)}
+                className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-xl p-2 focus:ring-2 focus:ring-emerald-500 focus:outline-none cursor-pointer shadow-2xs"
+              >
+                <option value="ADMINISTRADOR">Administrador</option>
+                <option value="ADMINISTRACION">Administración</option>
+                <option value="OPERACIONES">Operaciones</option>
+              </select>
+            ) : (
+              <div className="w-full bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-xl p-2 shadow-2xs">
+                {userRole === 'ADMINISTRADOR' ? 'Administrador' : userRole === 'ADMINISTRACION' ? 'Administración' : 'Operaciones'}
+              </div>
+            )}
           </div>
         </div>
 
