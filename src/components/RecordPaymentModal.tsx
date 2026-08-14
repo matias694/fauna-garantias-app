@@ -80,7 +80,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
 
       recordTenantPayment(receivable.id, paymentAmount, notes.trim(), paymentDate);
 
-      registerFinancialReceiptLink({
+      await registerFinancialReceiptLink({
         caseId: receivable.caseId,
         movementKind: 'PAGO_ARRENDATARIO',
         amount: paymentAmount,
