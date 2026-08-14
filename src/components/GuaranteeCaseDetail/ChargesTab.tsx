@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { GuaranteeCase, ChargeCategory, ChargeType, Charge, RepairStatus } from '../../types';
 import { formatCLP, formatDate, parseFormattedDateToInput, getLocalDateInputValue } from '../../utils/formatters';
 import { calculateGuaranteeFinances } from '../../utils/calculations';
+import { CurrencyInput } from '../CurrencyInput';
 import { DollarSign, Plus, Minus, Trash2, Edit2, Paperclip, Lock, Wrench, AlertTriangle } from 'lucide-react';
 
 interface ChargesTabProps {
@@ -523,16 +524,13 @@ export const ChargesTab: React.FC<ChargesTabProps> = ({ guaranteeCase }) => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Monto ($ CLP) *</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="1"
+                  <CurrencyInput
+                    min={1}
                     required
                     value={amount}
-                    onChange={(e) => { setAmount(Number(e.target.value)); setFormError(''); }}
-                    className={`w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-bold ${movementKind === 'ABONO' ? 'text-emerald-800' : 'text-rose-800'}`}
+                    onValueChange={(value) => { setAmount(value); setFormError(''); }}
+                    className={`w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-bold font-mono ${movementKind === 'ABONO' ? 'text-emerald-800' : 'text-rose-800'}`}
                   />
-                  <span className="text-[10px] text-slate-500 block mt-0.5">{formatCLP(amount)}</span>
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Fecha *</label>
