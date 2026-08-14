@@ -148,7 +148,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         notes: refundNotes.trim()
       });
 
-      registerFinancialReceiptLink({
+      await registerFinancialReceiptLink({
         caseId: guaranteeCase.id,
         movementKind: 'DEVOLUCION_ARRENDATARIO',
         amount: originalRefund,
