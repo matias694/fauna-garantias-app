@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Receivable } from '../types';
 import { formatCLP, getLocalDateInputValue } from '../utils/formatters';
 import { calculatePaymentDistribution } from '../utils/calculations';
+import { CurrencyInput } from './CurrencyInput';
 import { X, DollarSign, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface RecordPaymentModalProps {
@@ -63,7 +64,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
     if (paymentAmount <= 0 || paymentAmount > receivable.pendingBalance || !paymentDate) return;
     if (isPartialPayment && (!nextManagement.trim() || !nextManagementDate)) return;
 
-    const paymentNotes = [paymentReference.trim() ? `Método/referencia: ${paymentReference.trim()}` : '', notes.trim()]
+    const paymentNotes = [
+      paymentReference.trim() ? `Referencia/comprobante: ${paymentReference.trim()}` : '',
+      notes.trim()
+    ]
       .filter(Boolean)
       .join(' · ');
 
@@ -117,17 +121,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block font-bold text-slate-800 mb-1">Monto pagado *</label>
-              <input
-                type="number"
-                min="1"
+              <CurrencyInput
+                min={1}
                 max={receivable.pendingBalance}
-                step="1"
                 required
                 value={paymentAmount}
-                onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                onValueChange={setPaymentAmount}
                 className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm font-bold text-emerald-800 font-mono"
               />
-              <span className="text-[11px] text-slate-500 block mt-0.5 font-bold">{formatCLP(paymentAmount)}</span>
             </div>
             <div>
               <label className="block font-bold text-slate-800 mb-1">Fecha real del pago *</label>
@@ -136,8 +137,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({ isOpen, 
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Método / referencia</label>
-            <input value={paymentReference} onChange={e => setPaymentReference(e.target.value)} placeholder="Ej. Transferencia Banco Chile · comprobante 12345" className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
+            <label className="block font-semibold text-slate-700 mb-1">Referencia / comprobante</label>
+            <input value={paymentReference} onChange={e => setPaymentReference(e.target.value)} placeholder="Ej. Comprobante 12345" className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
           </div>
 
           <div>
