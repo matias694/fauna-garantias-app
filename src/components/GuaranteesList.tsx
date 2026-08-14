@@ -13,7 +13,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
   const { cases, receivables, setSelectedCaseId, setActiveView, settings } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterCaseStatus, setFilterCaseStatus] = useState<string>('ALL');
+  const [filterCaseStatus, setFilterCaseStatus] = useState<string>('OPEN');
   const [filterLiquidation, setFilterLiquidation] = useState<string>('ALL');
   const [filterPreparation, setFilterPreparation] = useState<string>('ALL');
   const [filterPlan, setFilterPlan] = useState<string>('ALL');
@@ -114,9 +114,9 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
           <div>
             <label className="text-[10px] font-bold text-slate-500 block mb-1 uppercase tracking-wider">Estado Caso</label>
             <select value={filterCaseStatus} onChange={(e) => setFilterCaseStatus(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-bold">
-              <option value="ALL">Todos los Casos</option>
               <option value="OPEN">🟢 Abiertos</option>
               <option value="CLOSED">🔒 Cerrados</option>
+              <option value="ALL">Todos los Casos</option>
             </select>
           </div>
 
@@ -249,7 +249,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                           <span className="text-emerald-800 font-bold text-xs block">Caso cerrado</span>
                           <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5">
                             <UserCheck className="w-3 h-3 text-[#2D8B73]" />
-                            {c.closedBy || 'Sistema'}
+                            {c.closedBy || c.responsible}
                           </span>
                         </div>
                       ) : (
