@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { AdministrationPlan } from '../types';
-import { formatCLP, addDaysToDate, getLocalDateInputValue } from '../utils/formatters';
+import { addDaysToDate, getLocalDateInputValue } from '../utils/formatters';
+import { CurrencyInput } from './CurrencyInput';
 import { X, ShieldCheck, DollarSign, User, Home } from 'lucide-react';
 
 interface NewGuaranteeModalProps {
@@ -41,7 +42,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
 
   if (!isOpen) return null;
 
-  // Calculate deadline date automatically
   const formattedReceptionDate = receptionDate.split('-').reverse().join('/');
   const autoDeadline = addDaysToDate(formattedReceptionDate, settings.maxLiquidationDays || 60);
 
@@ -121,7 +121,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full my-8 overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
         <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-emerald-600 flex items-center justify-center text-white">
@@ -140,10 +139,7 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
           </button>
         </div>
 
-        {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6 text-slate-800 text-sm">
-          
-          {/* DATOS DE LA PROPIEDAD */}
           <div className="space-y-3">
             <h4 className="font-semibold text-emerald-800 text-xs uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-100 pb-1.5">
               <Home className="w-4 h-4 text-emerald-600" />
@@ -191,7 +187,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
               </div>
             </div>
 
-            {/* Propietario info */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-700 mb-1">Propietario *</label>
@@ -237,7 +232,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             </div>
           </div>
 
-          {/* DATOS DEL ARRENDATARIO */}
           <div className="space-y-3">
             <h4 className="font-semibold text-emerald-800 text-xs uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-100 pb-1.5">
               <User className="w-4 h-4 text-emerald-600" />
@@ -288,7 +282,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             </div>
           </div>
 
-          {/* DATOS DEL CONTRATO Y GARANTÍA */}
           <div className="space-y-3">
             <h4 className="font-semibold text-emerald-800 text-xs uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-100 pb-1.5">
               <DollarSign className="w-4 h-4 text-emerald-600" />
@@ -297,16 +290,13 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Canon Mensual ($ CLP)</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
+                <CurrencyInput
+                  min={1}
                   required
                   value={monthlyRent}
-                  onChange={(e) => setMonthlyRent(Number(e.target.value))}
+                  onValueChange={setMonthlyRent}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-semibold text-slate-800"
                 />
-                <span className="text-[10px] text-slate-500 block mt-0.5">{formatCLP(monthlyRent)}</span>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Plan de Administración</label>
@@ -324,16 +314,13 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Monto Garantía ($ CLP) *</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
+                <CurrencyInput
+                  min={1}
                   required
                   value={guaranteeAmount}
-                  onChange={(e) => setGuaranteeAmount(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs font-bold text-emerald-900 bg-emerald-50/50"
+                  onValueChange={setGuaranteeAmount}
+                  className="w-full border border-slate-300 rounded-lg p-2 text-xs font-bold text-emerald-900 bg-emerald-50/50"
                 />
-                <span className="text-[10px] text-slate-500 block mt-0.5">{formatCLP(guaranteeAmount)}</span>
               </div>
             </div>
 
@@ -395,7 +382,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             </div>
           </div>
 
-          {/* OBSERVACIONES INICIALES */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Observaciones Iniciales de Recepción</label>
             <textarea
@@ -413,7 +399,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
             </div>
           )}
 
-          {/* Form Actions */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
             <button
               type="button"
@@ -429,7 +414,6 @@ export const NewGuaranteeModal: React.FC<NewGuaranteeModalProps> = ({ isOpen, on
               Crear Garantía
             </button>
           </div>
-
         </form>
       </div>
     </div>
