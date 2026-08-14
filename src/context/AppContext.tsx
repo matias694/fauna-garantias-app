@@ -27,6 +27,8 @@ import {
   canConfirmGuaranteeLiquidation,
   isChargeIncludedInLiquidation
 } from '../utils/calculations';
+import { appDataGateway, AppDataSnapshot } from '../services/appDataGateway';
+import { AppSessionUser, sessionGateway } from '../services/sessionGateway';
 
 const nextSequentialId = (prefix: string, ids: string[]) => {
   const max = ids.reduce((current, id) => {
@@ -66,7 +68,6 @@ const normalizeFinancialLedger = (c: GuaranteeCase): GuaranteeCase => {
 
   return { ...c, movements };
 };
-
 
 export const normalizeClosedOwnerPending = (c: GuaranteeCase): GuaranteeCase => {
   if (!c.isClosed || c.ownerPostClosePending || !c.ownerServiceDeferral) return c;
@@ -116,8 +117,16 @@ export function isCaseCompleted(c: GuaranteeCase, settings: SystemSettings = ini
   return true;
 }
 
+const normalizeCases = (rawCases: GuaranteeCase[], settings: SystemSettings): GuaranteeCase[] =>
+  rawCases.map(raw => {
+    const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
+    return { ...c, isCompleted: isCaseCompleted(c, settings) };
+  });
+
 interface AppContextType {
+  currentUser: AppSessionUser;
   userRole: UserRole;
+  canSwitchUserRole: boolean;
   setUserRole: (role: UserRole) => void;
   activeView: 'dashboard' | 'guarantees' | 'receivables' | 'settings' | 'case-detail';
   setActiveView: (view: 'dashboard' | 'guarantees' | 'receivables' | 'settings' | 'case-detail') => void;
@@ -168,56 +177,78 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [userRole, setUserRole] = useState<UserRole>('ADMINISTRADOR');
+  const [bootstrapSnapshot] = useState<AppDataSnapshot>(() => appDataGateway.getBootstrapSnapshot({
+    cases: initialGuaranteeCases,
+    receivables: initialReceivables,
+    settings: initialSettings,
+    auditLogs: []
+  }));
+  const [currentUser, setCurrentUser] = useState<AppSessionUser>(() => sessionGateway.getBootstrapUser());
+  const userRole = currentUser.role;
+  const canSwitchUserRole = sessionGateway.canSwitchRoleInUi;
+
   const [activeView, setActiveView] = useState<'dashboard' | 'guarantees' | 'receivables' | 'settings' | 'case-detail'>('dashboard');
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<SystemSettings>(bootstrapSnapshot.settings);
+  const [cases, setCases] = useState<GuaranteeCase[]>(() => normalizeCases(bootstrapSnapshot.cases, bootstrapSnapshot.settings));
+  const [receivables, setReceivables] = useState<Receivable[]>(bootstrapSnapshot.receivables);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(bootstrapSnapshot.auditLogs);
+  const [persistenceReady, setPersistenceReady] = useState(appDataGateway.bootstrapIsAuthoritative);
 
-  const [cases, setCases] = useState<GuaranteeCase[]>(() => {
-    const saved = localStorage.getItem('fauna_guarantee_cases_v2');
-    if (saved) {
-      try {
-        return JSON.parse(saved).map((raw: GuaranteeCase) => {
-          const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
-          return { ...c, isCompleted: isCaseCompleted(c) };
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return initialGuaranteeCases.map(raw => {
-      const c = normalizeClosedOwnerPending(normalizeFinancialLedger(raw));
-      return { ...c, isCompleted: isCaseCompleted(c) };
-    });
-  });
+  const setUserRole = (role: UserRole) => {
+    if (!sessionGateway.canSwitchRoleInUi || !sessionGateway.switchPrototypeRole) return;
+    setCurrentUser(sessionGateway.switchPrototypeRole(role));
+  };
 
-  const [receivables, setReceivables] = useState<Receivable[]>(() => {
-    const saved = localStorage.getItem('fauna_receivables_v2');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return initialReceivables;
-  });
+  useEffect(() => {
+    let cancelled = false;
+    void sessionGateway.refreshUser()
+      .then(user => {
+        if (!cancelled && user) setCurrentUser(user);
+      })
+      .catch(error => console.error('No se pudo refrescar la sesión del usuario.', error));
+    return () => { cancelled = true; };
+  }, []);
 
-  const [settings, setSettings] = useState<SystemSettings>(() => {
-    const saved = localStorage.getItem('fauna_settings_v2');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return initialSettings;
-  });
+  useEffect(() => {
+    let cancelled = false;
 
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem('fauna_audit_logs_v2');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
-    }
-    return [];
-  });
+    void appDataGateway.hydrate()
+      .then(snapshot => {
+        if (cancelled || !snapshot) return;
+        setSettings(snapshot.settings);
+        setCases(normalizeCases(snapshot.cases, snapshot.settings));
+        setReceivables(snapshot.receivables);
+        setAuditLogs(snapshot.auditLogs);
+        setPersistenceReady(true);
+      })
+      .catch(error => {
+        // Si un backend no logra hidratar, no habilitamos escrituras sobre datos fallback.
+        console.error('No se pudo hidratar el módulo de garantías.', error);
+      });
 
-  useEffect(() => localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(cases)), [cases]);
-  useEffect(() => localStorage.setItem('fauna_receivables_v2', JSON.stringify(receivables)), [receivables]);
-  useEffect(() => localStorage.setItem('fauna_settings_v2', JSON.stringify(settings)), [settings]);
-  useEffect(() => localStorage.setItem('fauna_audit_logs_v2', JSON.stringify(auditLogs)), [auditLogs]);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!persistenceReady) return;
+    void appDataGateway.saveCases(cases).catch(error => console.error('No se pudieron guardar los casos.', error));
+  }, [cases, persistenceReady]);
+
+  useEffect(() => {
+    if (!persistenceReady) return;
+    void appDataGateway.saveReceivables(receivables).catch(error => console.error('No se pudieron guardar las cuentas por cobrar.', error));
+  }, [receivables, persistenceReady]);
+
+  useEffect(() => {
+    if (!persistenceReady) return;
+    void appDataGateway.saveSettings(settings).catch(error => console.error('No se pudo guardar la configuración.', error));
+  }, [settings, persistenceReady]);
+
+  useEffect(() => {
+    if (!persistenceReady) return;
+    void appDataGateway.saveAuditLogs(auditLogs).catch(error => console.error('No se pudo guardar la auditoría.', error));
+  }, [auditLogs, persistenceReady]);
 
   const withCompletion = (c: GuaranteeCase): GuaranteeCase => ({ ...c, isCompleted: isCaseCompleted(c, settings) });
 
@@ -227,6 +258,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       caseId,
       timestamp: new Date().toLocaleString('es-CL'),
       user: userRole,
+      actorUserId: currentUser.id,
+      actorName: currentUser.name,
+      actorEmail: currentUser.email,
       actorRole: userRole,
       action,
       detail
@@ -474,7 +508,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addFinancialMovement = (caseId: string, movementData: Omit<FinancialMovement, 'id' | 'caseId'>) => {
     let normalized = { ...movementData };
 
-    // Compatibilidad con el formulario actual: convierte el destino/modalidad textual en datos estructurados.
     if (normalized.type === 'APORTE_PROPIETARIO') {
       const hayReparacion = /reparacion/i.test(`${normalized.description} ${normalized.observation}`);
       const pagoDirecto = /pagado directamente|fauna no recibió/i.test(`${normalized.description} ${normalized.observation}`);
@@ -942,7 +975,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
+      currentUser,
       userRole,
+      canSwitchUserRole,
       setUserRole,
       activeView,
       setActiveView,
