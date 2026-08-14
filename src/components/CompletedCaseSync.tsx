@@ -1,18 +1,25 @@
 import React, { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
-import { calculateFundingReadiness } from '../utils/calculations';
+import { calculateGuaranteeFinances } from '../utils/calculations';
 
 /**
- * Mantiene coherentes los estados operativos después de resolver obligaciones.
- * - Una cobranza pagada/incobrable deja de bloquear por arrendatario y deja de
- *   conservar una próxima gestión antigua de cobranza.
- * - Un caso completado queda listo únicamente para la acción final "Cerrar caso".
- * - Un caso cerrado no conserva bloqueos ni próximas gestiones activas.
- * - Bloqueos ajenos a la cobranza nunca se eliminan automáticamente.
+ * El usuario ejecuta acciones; el sistema administra el estado terminal del caso.
+ *
+ * Un caso se cierra automáticamente cuando:
+ * - la preparación está lista;
+ * - la liquidación fue confirmada;
+ * - no existe un bloqueo operativo ajeno a una cobranza ya resuelta; y
+ * - el resultado financiero ya no requiere acción:
+ *   · saldo exacto: al confirmar;
+ *   · devolución: al registrar la devolución;
+ *   · deuda arrendatario: al quedar pagada o incobrable.
+ *
+ * Los gastos comunes/servicios a cargo del propietario son informativos y no
+ * mantienen viva la garantía. Si un Administrador reabre manualmente un caso,
+ * se respeta esa reapertura para permitir una revisión excepcional.
  */
 export const CompletedCaseSync: React.FC = () => {
-  const { cases, settings, updateGuaranteeCase } = useApp();
+  const { cases, settings, updateGuaranteeCase, logAudit } = useApp();
 
   useEffect(() => {
     cases.forEach(c => {
@@ -22,7 +29,9 @@ export const CompletedCaseSync: React.FC = () => {
           Boolean(c.blockedReasonNotes?.trim()) ||
           Boolean(c.nextManagement?.trim()) ||
           Boolean(c.nextManagementDate?.trim()) ||
-          Boolean(c.nextManagementResponsible?.trim());
+          Boolean(c.nextManagementResponsible?.trim()) ||
+          Boolean(c.ownerServiceDeferral) ||
+          Boolean(c.ownerPostClosePending);
 
         if (needsClosedCleanup) {
           updateGuaranteeCase(c.id, {
@@ -30,64 +39,63 @@ export const CompletedCaseSync: React.FC = () => {
             blockedReasonNotes: '',
             nextManagement: '',
             nextManagementDate: '',
-            nextManagementResponsible: ''
+            nextManagementResponsible: '',
+            ownerServiceDeferral: undefined,
+            ownerPostClosePending: undefined
           });
         }
         return;
       }
 
+      // Reapertura manual: closedAt se conserva como señal de que un Administrador
+      // decidió volver a abrir un caso que ya había llegado a estado terminal.
+      if (c.closedAt) return;
+      if (c.preparationStatus !== 'LISTA' || c.liquidationStatus !== 'EMITIDA') return;
+
+      const fin = calculateGuaranteeFinances(c, settings);
+      const originalRefund = c.liquidationSnapshot?.financials.refundToTenant ?? fin.refundToTenant;
+      const originalDeficit = c.liquidationSnapshot?.financials.tenantDeficit ?? fin.tenantDeficit;
       const collectionResolved = c.receivableStatus === 'PAGADA' || c.receivableStatus === 'INCOBRABLE';
-      const hasUnrelatedBlock = c.blockedBy !== 'SIN_BLOQUEO' && c.blockedBy !== 'ARRENDATARIO';
-      const today = formatDate(getLocalDateInputValue());
 
-      // Cuando termina la cobranza, su bloqueo y su próxima gestión dejan de aplicar.
-      // Si existe un bloqueo distinto (propietario, documento, proveedor, etc.), se preserva.
-      if (collectionResolved && !hasUnrelatedBlock) {
-        const readiness = calculateFundingReadiness(c, settings);
-        const targetNextManagement = c.isCompleted
-          ? 'Cerrar caso'
-          : readiness.ownerServicePending > 0
-            ? `Gestionar ${formatCLP(readiness.ownerServicePending)} de gastos comunes/servicios con propietario`
-            : 'Revisar pendientes para cierre del caso';
-        const targetResponsible = c.responsible || '';
+      const hasUnrelatedBlock =
+        c.blockedBy !== 'SIN_BLOQUEO' &&
+        !(c.blockedBy === 'ARRENDATARIO' && collectionResolved);
+      if (hasUnrelatedBlock) return;
 
-        const needsCollectionCleanup =
-          c.blockedBy !== 'SIN_BLOQUEO' ||
-          Boolean(c.blockedReasonNotes?.trim()) ||
-          c.nextManagement !== targetNextManagement ||
-          !c.nextManagementDate?.trim() ||
-          c.nextManagementResponsible !== targetResponsible;
-
-        if (needsCollectionCleanup) {
-          updateGuaranteeCase(c.id, {
-            blockedBy: 'SIN_BLOQUEO',
-            blockedReasonNotes: '',
-            nextManagement: targetNextManagement,
-            nextManagementDate: today,
-            nextManagementResponsible: targetResponsible
-          });
-        }
-        return;
+      let terminalReason = '';
+      if (originalRefund > 0) {
+        if (c.refund?.status !== 'TRANSFERIDA') return;
+        terminalReason = 'devolución al arrendatario registrada';
+      } else if (originalDeficit > 0) {
+        if (!collectionResolved) return;
+        terminalReason = c.receivableStatus === 'PAGADA'
+          ? 'cobranza pagada completamente'
+          : 'cobranza cerrada como incobrable';
+      } else {
+        terminalReason = 'liquidación confirmada sin saldo pendiente';
       }
-
-      if (!c.isCompleted || hasUnrelatedBlock) return;
-
-      const needsCompletionCleanup =
-        c.blockedBy === 'ARRENDATARIO' ||
-        c.nextManagement !== 'Cerrar caso' ||
-        !c.nextManagementDate?.trim();
-
-      if (!needsCompletionCleanup) return;
 
       updateGuaranteeCase(c.id, {
+        isClosed: true,
+        isCompleted: true,
+        closedAt: new Date().toISOString(),
+        closedBy: 'Sistema',
         blockedBy: 'SIN_BLOQUEO',
         blockedReasonNotes: '',
-        nextManagement: 'Cerrar caso',
-        nextManagementDate: today,
-        nextManagementResponsible: c.responsible || ''
+        nextManagement: '',
+        nextManagementDate: '',
+        nextManagementResponsible: '',
+        ownerServiceDeferral: undefined,
+        ownerPostClosePending: undefined
       });
+
+      logAudit(
+        c.id,
+        'Cierre automático de Caso',
+        `Caso ${c.id} cerrado automáticamente: ${terminalReason}.`
+      );
     });
-  }, [cases, settings, updateGuaranteeCase]);
+  }, [cases, settings, updateGuaranteeCase, logAudit]);
 
   return null;
 };
