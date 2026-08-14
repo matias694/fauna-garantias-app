@@ -382,4 +382,5 @@ export interface SystemSettings {
   repairCategories: RepairCategory[];
   responsiblesList: string[];
   users?: SystemUser[];
+  sensitiveMetricsRoles?: UserRole[];
 }
