@@ -3,6 +3,7 @@ import { FinancialReceipt } from '../types';
 const DB_NAME = 'fauna-financial-receipts';
 const DB_VERSION = 1;
 const STORE_NAME = 'receipts';
+const LINKS_KEY = 'fauna_financial_receipt_links_v1';
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   'application/pdf',
@@ -11,9 +12,23 @@ const ALLOWED_TYPES = new Set([
   'image/webp'
 ]);
 
+export type ReceiptMovementKind = 'DEVOLUCION_ARRENDATARIO' | 'PAGO_ARRENDATARIO' | 'APORTE_PROPIETARIO';
+
 export interface ReceiptUploadContext {
   caseId: string;
-  movementKind: 'DEVOLUCION_ARRENDATARIO' | 'PAGO_ARRENDATARIO' | 'APORTE_PROPIETARIO';
+  movementKind: ReceiptMovementKind;
+}
+
+export interface FinancialReceiptLink {
+  id: string;
+  caseId: string;
+  movementKind: ReceiptMovementKind;
+  amount: number;
+  paymentDate: string;
+  relatedEntityId?: string;
+  receipt: FinancialReceipt;
+  notes?: string;
+  createdAt: string;
 }
 
 const openDb = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
@@ -54,6 +69,21 @@ const getBlob = async (storageKey: string): Promise<Blob | null> => {
   return result;
 };
 
+const readLinks = (): FinancialReceiptLink[] => {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(LINKS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeLinks = (links: FinancialReceiptLink[]) => {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(LINKS_KEY, JSON.stringify(links));
+};
+
 export const validateFinancialReceiptFile = (file: File): string | null => {
   if (!ALLOWED_TYPES.has(file.type)) return 'El comprobante debe ser PDF, JPG, PNG o WEBP.';
   if (file.size > MAX_FILE_SIZE) return 'El comprobante no puede superar 10 MB.';
@@ -86,6 +116,26 @@ export const uploadFinancialReceipt = async (
     uploadedAt: new Date().toISOString()
   };
 };
+
+/**
+ * Registra la relación entre el comprobante y el hecho financiero.
+ * Esta pequeña registry local representa la futura tabla backend
+ * financial_receipt_links (case_id, movement_kind, amount, date, receipt_id...).
+ */
+export const registerFinancialReceiptLink = (
+  data: Omit<FinancialReceiptLink, 'id' | 'createdAt'>
+): FinancialReceiptLink => {
+  const link: FinancialReceiptLink = {
+    ...data,
+    id: `FRL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    createdAt: new Date().toISOString()
+  };
+  writeLinks([...readLinks(), link]);
+  return link;
+};
+
+export const getFinancialReceiptLinksForCase = (caseId: string): FinancialReceiptLink[] =>
+  readLinks().filter(link => link.caseId === caseId);
 
 export const openFinancialReceipt = async (receipt: FinancialReceipt): Promise<void> => {
   if (receipt.storageProvider === 'BACKEND' && receipt.url) {
