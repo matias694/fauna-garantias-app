@@ -114,7 +114,7 @@ export const FullCoverageCaseBanner: React.FC = () => {
         receipt
       });
 
-      registerFinancialReceiptLink({
+      await registerFinancialReceiptLink({
         caseId: guaranteeCase.id,
         movementKind: 'APORTE_PROPIETARIO',
         amount: paymentAmount,
