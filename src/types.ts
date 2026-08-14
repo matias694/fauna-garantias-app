@@ -44,6 +44,18 @@ export interface FollowUpComment {
   editedBy?: string;
 }
 
+export interface FinancialReceipt {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  storageKey: string;
+  storageProvider: 'LOCAL_INDEXED_DB' | 'BACKEND';
+  uploadedAt: string;
+  /** URL segura/presignada cuando el almacenamiento sea backend. */
+  url?: string;
+}
+
 export type RefundStatus = 'PENDIENTE' | 'TRANSFERIDA';
 
 export interface TenantRefund {
@@ -56,6 +68,7 @@ export interface TenantRefund {
   notes?: string;
   user?: string;
   userId?: string;
+  receipt?: FinancialReceipt;
 }
 
 export type BlockedByReason =
@@ -194,6 +207,7 @@ export interface FinancialMovement {
   observation: string;
   ownerPaymentPurpose?: OwnerPaymentPurpose;
   ownerPaymentMode?: OwnerPaymentMode;
+  receipt?: FinancialReceipt;
 }
 
 export type ReceivableStatus =
@@ -238,6 +252,7 @@ export interface PaymentAllocation {
   notes: string;
   user: string;
   userId?: string;
+  receipt?: FinancialReceipt;
 }
 
 export interface CaseAttachment {
