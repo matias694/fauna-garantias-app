@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFundingReadiness, calculateGuaranteeFinances, canConfirmGuaranteeLiquidation } from '../utils/calculations';
 import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
-import { CurrencyInput } from './CurrencyInput';
+import { FinancialTransactionFields } from './FinancialTransactionFields';
+import { registerFinancialReceiptLink, uploadFinancialReceipt } from '../services/financialReceiptStorage';
 import { Banknote, CheckCircle2, Clock3, ShieldCheck, X } from 'lucide-react';
 
 type OwnerPaymentMode = 'TRANSFERIDO_FAUNA' | 'PAGADO_DIRECTO';
@@ -29,9 +30,10 @@ export const FullCoverageCaseBanner: React.FC = () => {
   const [paymentMode, setPaymentMode] = useState<OwnerPaymentMode>('TRANSFERIDO_FAUNA');
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentDate, setPaymentDate] = useState(getLocalDateInputValue());
-  const [paymentReference, setPaymentReference] = useState('');
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   if (activeView !== 'case-detail' || !selectedCaseId) return null;
 
@@ -52,14 +54,16 @@ export const FullCoverageCaseBanner: React.FC = () => {
     setPaymentMode('TRANSFERIDO_FAUNA');
     setPaymentAmount(damagePending);
     setPaymentDate(getLocalDateInputValue());
-    setPaymentReference('');
+    setReceiptFile(null);
     setPaymentNotes('');
     setPaymentError('');
+    setIsSaving(false);
     setPaymentModalOpen(true);
   };
 
-  const registerRepairPayment = (event: React.FormEvent) => {
+  const registerRepairPayment = async (event: React.FormEvent) => {
     event.preventDefault();
+    setPaymentError('');
 
     if (paymentAmount <= 0 || paymentAmount > damagePending) {
       setPaymentError(`El monto debe ser mayor a $0 y no puede superar ${formatCLP(damagePending)}.`);
@@ -69,36 +73,63 @@ export const FullCoverageCaseBanner: React.FC = () => {
       setPaymentError('Selecciona la fecha real del pago.');
       return;
     }
+    if (!receiptFile) {
+      setPaymentError('Adjunta el comprobante antes de registrar el aporte.');
+      return;
+    }
 
     const modeLabel = paymentMode === 'TRANSFERIDO_FAUNA'
       ? 'Transferido a Fauna'
       : 'Pagado directamente por el propietario';
 
-    updateGuaranteeCase(guaranteeCase.id, {
-      ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount
-    });
+    setIsSaving(true);
+    try {
+      const receipt = await uploadFinancialReceipt(receiptFile, {
+        caseId: guaranteeCase.id,
+        movementKind: 'APORTE_PROPIETARIO'
+      });
 
-    addFinancialMovement(guaranteeCase.id, {
-      date: formatDate(paymentDate),
-      time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
-      type: 'APORTE_PROPIETARIO',
-      ownerPaymentPurpose: 'REPARACIONES',
-      ownerPaymentMode: paymentMode,
-      description: paymentMode === 'TRANSFERIDO_FAUNA'
-        ? `Fondos recibidos de propietario para reparaciones (${guaranteeCase.ownerName})`
-        : `Pago directo realizado por propietario para reparaciones (${guaranteeCase.ownerName})`,
-      amount: paymentAmount,
-      user: userRole,
-      reference: paymentReference.trim() || `${paymentMode}-REPARACIONES-${guaranteeCase.id}-${Date.now()}`,
-      observation: [
-        `Modalidad: ${modeLabel}`,
-        'Destino: reparaciones',
-        'Monto sujeto a recuperación si posteriormente paga el arrendatario.',
-        paymentNotes.trim()
-      ].filter(Boolean).join(' · ')
-    });
+      updateGuaranteeCase(guaranteeCase.id, {
+        ownerContribution: (guaranteeCase.ownerContribution || 0) + paymentAmount
+      });
 
-    setPaymentModalOpen(false);
+      addFinancialMovement(guaranteeCase.id, {
+        date: formatDate(paymentDate),
+        time: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
+        type: 'APORTE_PROPIETARIO',
+        ownerPaymentPurpose: 'REPARACIONES',
+        ownerPaymentMode: paymentMode,
+        description: paymentMode === 'TRANSFERIDO_FAUNA'
+          ? `Fondos recibidos de propietario para reparaciones (${guaranteeCase.ownerName})`
+          : `Pago directo realizado por propietario para reparaciones (${guaranteeCase.ownerName})`,
+        amount: paymentAmount,
+        user: userRole,
+        reference: `APORTE-${guaranteeCase.id}-${Date.now()}`,
+        observation: [
+          `Modalidad: ${modeLabel}`,
+          'Destino: reparaciones',
+          'Monto sujeto a recuperación si posteriormente paga el arrendatario.',
+          paymentNotes.trim()
+        ].filter(Boolean).join(' · '),
+        receipt
+      });
+
+      registerFinancialReceiptLink({
+        caseId: guaranteeCase.id,
+        movementKind: 'APORTE_PROPIETARIO',
+        amount: paymentAmount,
+        paymentDate,
+        relatedEntityId: guaranteeCase.id,
+        receipt,
+        notes: [`Modalidad: ${modeLabel}`, paymentNotes.trim()].filter(Boolean).join(' · ')
+      });
+
+      setPaymentModalOpen(false);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : 'No se pudo guardar el comprobante.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -202,8 +233,8 @@ export const FullCoverageCaseBanner: React.FC = () => {
 
       {paymentModalOpen && damagePending > 0 && !isConfirmed && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 text-slate-900">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
-            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 max-h-[92vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between sticky top-0 z-10">
               <div>
                 <h3 className="font-bold text-sm">Registrar aporte para reparaciones</h3>
                 <p className="text-[11px] text-slate-300 mt-0.5">Pendiente: {formatCLP(damagePending)}</p>
@@ -211,41 +242,35 @@ export const FullCoverageCaseBanner: React.FC = () => {
               <button type="button" onClick={() => setPaymentModalOpen(false)} className="p-1.5 text-slate-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
 
-            <form onSubmit={registerRepairPayment} className="p-5 space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Monto *</label>
-                <CurrencyInput
-                  min={1}
-                  max={damagePending}
-                  required
-                  value={paymentAmount}
-                  onValueChange={setPaymentAmount}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Modalidad *</label>
-                <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value as OwnerPaymentMode)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2">
-                  <option value="TRANSFERIDO_FAUNA">Transferido a Fauna</option>
-                  <option value="PAGADO_DIRECTO">Pagado directamente por el propietario</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Fecha *</label>
-                <input type="date" required value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Referencia</label>
-                <input value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Observaciones</label>
-                <textarea rows={2} value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
-              {paymentError && <p className="text-red-700 font-semibold">{paymentError}</p>}
+            <form onSubmit={registerRepairPayment} className="p-5 space-y-4 text-xs">
+              <FinancialTransactionFields
+                amount={paymentAmount}
+                onAmountChange={setPaymentAmount}
+                amountMin={1}
+                amountMax={damagePending}
+                date={paymentDate}
+                onDateChange={setPaymentDate}
+                receiptFile={receiptFile}
+                onReceiptFileChange={setReceiptFile}
+                notes={paymentNotes}
+                onNotesChange={setPaymentNotes}
+                receiptLabel="Comprobante de pago"
+              >
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Modalidad *</label>
+                  <select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value as OwnerPaymentMode)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5">
+                    <option value="TRANSFERIDO_FAUNA">Transferido a Fauna</option>
+                    <option value="PAGADO_DIRECTO">Pagado directamente por el propietario</option>
+                  </select>
+                </div>
+              </FinancialTransactionFields>
+
+              {paymentError && <p className="text-rose-700 font-semibold">{paymentError}</p>}
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button type="button" onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl cursor-pointer">Registrar aporte</button>
+                <button type="button" disabled={isSaving} onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer disabled:opacity-60">Cancelar</button>
+                <button type="submit" disabled={isSaving} className="px-4 py-2 bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded-xl cursor-pointer">
+                  {isSaving ? 'Guardando…' : 'Registrar aporte'}
+                </button>
               </div>
             </form>
           </div>
