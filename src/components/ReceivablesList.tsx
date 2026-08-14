@@ -312,50 +312,84 @@ export const ReceivablesList: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-100">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold">Registrar gestión de cobranza</h3>
+                <h3 className="text-base font-bold">{showUncollectible ? 'Marcar cobranza como incobrable' : 'Registrar gestión de cobranza'}</h3>
                 <p className="text-xs text-slate-300">{managementReceivable.tenantName} · {managementReceivable.caseId} · saldo {formatCLP(managementReceivable.pendingBalance)}</p>
               </div>
               <button onClick={closeManagement} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={handleSaveManagement} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Resultado de la gestión *</label>
-                <textarea required rows={3} value={managementComment} onChange={e => setManagementComment(e.target.value)} placeholder="Ej. Se contactó al arrendatario; se compromete a transferir el viernes." className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
-              </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Próxima gestión *</label>
-                <input required value={nextManagement} onChange={e => setNextManagement(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" placeholder="Ej. Verificar transferencia" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Fecha *</label>
-                  <input required type="date" value={nextManagementDate.includes('/') ? '' : nextManagementDate} onChange={e => setNextManagementDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
-                </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Responsable</label>
-                  <select value={nextManagementResponsible} onChange={e => setNextManagementResponsible(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5">
-                    <option value="">Sin responsable</option>
-                    {settings.responsiblesList.map(name => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </div>
-              </div>
+            <form onSubmit={showUncollectible ? (e) => e.preventDefault() : handleSaveManagement} className="p-6 space-y-4 text-xs">
+              {showUncollectible ? (
+                <>
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                    <span className="text-[10px] uppercase font-extrabold tracking-wider text-rose-700 block">Saldo no recuperado</span>
+                    <strong className="text-xl font-mono text-rose-900 block mt-1">{formatCLP(managementReceivable.pendingBalance)}</strong>
+                  </div>
 
-              {showUncollectible && (
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2">
-                  <label className="block font-bold text-rose-900">Motivo para marcar incobrable *</label>
-                  <textarea rows={2} value={uncollectibleReason} onChange={e => setUncollectibleReason(e.target.value)} placeholder="Debe quedar una razón concreta y auditable." className="w-full bg-white border border-rose-200 rounded-lg p-2.5" />
-                  <button type="button" disabled={!uncollectibleReason.trim()} onClick={handleMarkUncollectible} className="px-3 py-2 rounded-lg bg-rose-700 disabled:bg-rose-300 text-white font-extrabold text-[11px]">Confirmar incobrable</button>
-                </div>
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">Motivo para marcar incobrable *</label>
+                    <textarea
+                      required
+                      rows={4}
+                      value={uncollectibleReason}
+                      onChange={e => setUncollectibleReason(e.target.value)}
+                      placeholder="Ej. Sin respuesta después de múltiples intentos de cobro; acuerdo de pago incumplido."
+                      className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5"
+                    />
+                    <p className="text-[10px] text-slate-500 mt-1">El sistema registrará automáticamente la fecha y el usuario que cierre la cobranza.</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setShowUncollectible(false); setUncollectibleReason(''); }}
+                      className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold"
+                    >
+                      Volver
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!uncollectibleReason.trim()}
+                      onClick={handleMarkUncollectible}
+                      className="px-5 py-2 rounded-lg bg-rose-700 hover:bg-rose-800 disabled:bg-rose-300 text-white font-extrabold"
+                    >
+                      Confirmar incobrable
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Resultado de la gestión *</label>
+                    <textarea required rows={3} value={managementComment} onChange={e => setManagementComment(e.target.value)} placeholder="Ej. Se contactó al arrendatario; se compromete a transferir el viernes." className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-slate-700 mb-1">Próxima gestión *</label>
+                    <input required value={nextManagement} onChange={e => setNextManagement(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" placeholder="Ej. Verificar transferencia" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Fecha *</label>
+                      <input required type="date" value={nextManagementDate.includes('/') ? '' : nextManagementDate} onChange={e => setNextManagementDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5" />
+                    </div>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Responsable</label>
+                      <select value={nextManagementResponsible} onChange={e => setNextManagementResponsible(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5">
+                        <option value="">Sin responsable</option>
+                        {settings.responsiblesList.map(name => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button type="button" onClick={() => setShowUncollectible(true)} className="text-rose-700 font-bold text-[11px] hover:underline">Marcar incobrable</button>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={closeManagement} className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold">Cancelar</button>
+                      <button type="submit" className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg">Guardar gestión</button>
+                    </div>
+                  </div>
+                </>
               )}
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <button type="button" onClick={() => setShowUncollectible(v => !v)} className="text-rose-700 font-bold text-[11px] hover:underline">{showUncollectible ? 'Cancelar incobrable' : 'Marcar incobrable'}</button>
-                <div className="flex gap-2">
-                  <button type="button" onClick={closeManagement} className="px-4 py-2 border border-slate-300 text-slate-600 rounded-lg font-semibold">Cancelar</button>
-                  <button type="submit" className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg">Guardar gestión</button>
-                </div>
-              </div>
             </form>
           </div>
         </div>
