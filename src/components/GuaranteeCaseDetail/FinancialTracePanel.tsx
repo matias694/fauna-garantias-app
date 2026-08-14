@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GuaranteeCase } from '../../types';
 import { formatCLP } from '../../utils/formatters';
-import { getFinancialReceiptLinksForCase, openFinancialReceipt } from '../../services/financialReceiptStorage';
+import {
+  FinancialReceiptLink,
+  getFinancialReceiptLinksForCase,
+  openFinancialReceipt
+} from '../../services/financialReceiptStorage';
 import { Banknote, CheckCircle2, FileText, ExternalLink, UserRound } from 'lucide-react';
 
 interface FinancialTracePanelProps {
@@ -16,16 +20,34 @@ const movementLabel = (kind: 'DEVOLUCION_ARRENDATARIO' | 'PAGO_ARRENDATARIO' | '
 
 export const FinancialTracePanel: React.FC<FinancialTracePanelProps> = ({ guaranteeCase }) => {
   const [openError, setOpenError] = useState('');
+  const [receiptLinks, setReceiptLinks] = useState<FinancialReceiptLink[]>([]);
+
   const payments = (guaranteeCase.movements || []).filter(m => m.type === 'PAGO_ARRENDATARIO');
   const ownerContributions = (guaranteeCase.movements || []).filter(m => m.type === 'APORTE_PROPIETARIO');
   const refundMovement = [...(guaranteeCase.movements || [])].reverse().find(m => m.type === 'DEVOLUCION_ARRENDATARIO');
   const refund = guaranteeCase.refund;
-  const receiptLinks = getFinancialReceiptLinksForCase(guaranteeCase.id)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  useEffect(() => {
+    let cancelled = false;
+    setOpenError('');
+
+    void getFinancialReceiptLinksForCase(guaranteeCase.id)
+      .then(links => {
+        if (cancelled) return;
+        setReceiptLinks([...links].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setReceiptLinks([]);
+        setOpenError(error instanceof Error ? error.message : 'No se pudieron cargar los comprobantes.');
+      });
+
+    return () => { cancelled = true; };
+  }, [guaranteeCase.id, guaranteeCase.movements.length, guaranteeCase.refund?.status]);
 
   if (payments.length === 0 && ownerContributions.length === 0 && refund?.status !== 'TRANSFERIDA' && receiptLinks.length === 0) return null;
 
-  const handleOpenReceipt = async (receipt: (typeof receiptLinks)[number]['receipt']) => {
+  const handleOpenReceipt = async (receipt: FinancialReceiptLink['receipt']) => {
     setOpenError('');
     try {
       await openFinancialReceipt(receipt);
@@ -113,6 +135,10 @@ export const FinancialTracePanel: React.FC<FinancialTracePanelProps> = ({ guaran
             {payment.observation && <p className="text-slate-700 whitespace-pre-line"><strong>Detalle:</strong> {payment.observation}</p>}
           </div>
         ))}
+
+        {openError && receiptLinks.length === 0 && (
+          <p className="text-[10px] font-semibold text-rose-700">{openError}</p>
+        )}
       </div>
     </div>
   );
