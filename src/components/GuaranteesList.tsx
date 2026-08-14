@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { formatCLP, parseLocalDate } from '../utils/formatters';
-import { calculateFundingReadiness, calculateGuaranteeFinances } from '../utils/calculations';
+import { calculateGuaranteeFinances } from '../utils/calculations';
 import { getSettlementState } from '../utils/settlementState';
 import { Search, Plus, ChevronRight, UserCheck } from 'lucide-react';
 
@@ -23,7 +23,6 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
   const filteredCases = cases.filter(c => {
     if (filterCaseStatus === 'OPEN' && c.isClosed) return false;
     if (filterCaseStatus === 'CLOSED' && !c.isClosed) return false;
-    if (filterCaseStatus === 'OWNER_PENDING' && calculateFundingReadiness(c, settings).ownerServicePending <= 0) return false;
 
     const term = searchTerm.toLowerCase();
     const matchSearch =
@@ -59,10 +58,8 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
     setActiveView('case-detail');
   };
 
-  const parseDateStr = parseLocalDate;
-
   const isOverdue = (dateStr?: string) => {
-    const d = parseDateStr(dateStr);
+    const d = parseLocalDate(dateStr);
     if (!d) return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -70,7 +67,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
   };
 
   const isTodayDate = (dateStr?: string) => {
-    const d = parseDateStr(dateStr);
+    const d = parseLocalDate(dateStr);
     if (!d) return false;
     const today = new Date();
     return d.toDateString() === today.toDateString();
@@ -80,7 +77,7 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
     if (!dateStr) return 'Sin fecha';
     if (isTodayDate(dateStr)) return 'Hoy';
     if (isOverdue(dateStr)) {
-      const d = parseDateStr(dateStr)!;
+      const d = parseLocalDate(dateStr)!;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const diffDays = Math.max(1, Math.round((today.getTime() - d.getTime()) / (1000 * 3600 * 24)));
@@ -120,7 +117,6 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
               <option value="ALL">Todos los Casos</option>
               <option value="OPEN">🟢 Abiertos</option>
               <option value="CLOSED">🔒 Cerrados</option>
-              <option value="OWNER_PENDING">Pendiente propietario</option>
             </select>
           </div>
 
@@ -195,7 +191,6 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                 const fin = calculateGuaranteeFinances(c, settings);
                 const receivable = receivables.find(r => r.caseId === c.id);
                 const settlement = getSettlementState(c, receivable, settings);
-                const readiness = calculateFundingReadiness(c, settings);
                 const overdueMgmt = !c.isClosed && Boolean(c.nextManagementDate) && isOverdue(c.nextManagementDate);
                 const formattedDate = formatShortDateStr(c.nextManagementDate);
                 const liquidationLabel = c.liquidationStatus === 'EN_PREPARACION'
@@ -210,11 +205,6 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <strong className="text-[#1E382B] font-extrabold">{c.id}</strong>
                         {c.isClosed && <span className="px-1.5 py-0.2 bg-slate-200 text-slate-700 font-bold text-[9px] rounded uppercase border border-slate-300">Cerrado</span>}
-                        {readiness.ownerServicePending > 0 && (
-                          <span className="px-1.5 py-0.2 bg-sky-50 text-sky-800 font-bold text-[9px] rounded border border-sky-200">
-                            {c.ownerPostClosePending ? 'Seguimiento posterior' : c.ownerServiceDeferral ? 'Diferido' : 'Pendiente prop.'} {formatCLP(readiness.ownerServicePending)}
-                          </span>
-                        )}
                       </div>
                       <span className="text-slate-800 font-semibold block text-[11px] mt-0.5">{c.propertyAddress}, {c.propertyUnit}</span>
                     </td>
@@ -256,23 +246,11 @@ export const GuaranteesList: React.FC<GuaranteesListProps> = ({ onOpenNewModal }
                     <td className="p-3.5 max-w-xs">
                       {c.isClosed ? (
                         <div className="space-y-1">
-                          {readiness.ownerServicePending > 0 && c.ownerPostClosePending ? (
-                            <>
-                              <span className="text-sky-800 font-bold text-xs block">Seguimiento posterior propietario</span>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200">{formatShortDateStr(c.ownerPostClosePending.nextReviewDate)}</span>
-                                <span className="text-[10px] text-slate-500 font-medium inline-flex items-center gap-0.5"><UserCheck className="w-3 h-3 text-[#2D8B73]" />{c.ownerPostClosePending.responsible}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-emerald-800 font-bold text-xs block">Caso cerrado</span>
-                              <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5">
-                                <UserCheck className="w-3 h-3 text-[#2D8B73]" />
-                                {c.closedBy || c.responsible}
-                              </span>
-                            </>
-                          )}
+                          <span className="text-emerald-800 font-bold text-xs block">Caso cerrado</span>
+                          <span className="text-[10px] text-slate-500 inline-flex items-center gap-0.5">
+                            <UserCheck className="w-3 h-3 text-[#2D8B73]" />
+                            {c.closedBy || 'Sistema'}
+                          </span>
                         </div>
                       ) : (
                         <div className="space-y-1">
