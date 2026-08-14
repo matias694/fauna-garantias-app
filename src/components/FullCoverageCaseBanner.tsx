@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { calculateFundingReadiness, calculateGuaranteeFinances, canConfirmGuaranteeLiquidation } from '../utils/calculations';
 import { formatCLP, formatDate, getLocalDateInputValue } from '../utils/formatters';
+import { CurrencyInput } from './CurrencyInput';
 import { Banknote, CheckCircle2, Clock3, ShieldCheck, X } from 'lucide-react';
 
 type OwnerPaymentMode = 'TRANSFERIDO_FAUNA' | 'PAGADO_DIRECTO';
@@ -213,7 +214,14 @@ export const FullCoverageCaseBanner: React.FC = () => {
             <form onSubmit={registerRepairPayment} className="p-5 space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Monto *</label>
-                <input type="number" min="1" max={damagePending} required value={paymentAmount} onChange={(e) => setPaymentAmount(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
+                <CurrencyInput
+                  min={1}
+                  max={damagePending}
+                  required
+                  value={paymentAmount}
+                  onValueChange={setPaymentAmount}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 font-mono"
+                />
               </div>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Modalidad *</label>
