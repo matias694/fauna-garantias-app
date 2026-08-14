@@ -13,22 +13,30 @@ import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
 import { freshCases } from './components/ExactBalanceDemoSeeder';
+import { initialSettings } from './data/initialData';
+import { appDataGateway } from './services/appDataGateway';
 
 const QA_V5_MARKER = 'fauna_guarantees_demo_v5_seeded';
 
 /**
- * QA v5: sembrado sincrónico ANTES de montar AppProvider.
- * Esto evita que el provider alcance a leer/regrabar los cuatro fixtures antiguos
- * antes de que el reset se ejecute.
+ * QA v5: sembrado antes de montar AppProvider, pero sin conocer el mecanismo
+ * de persistencia. En la intranet, el gateway de backend simplemente no
+ * implementará ensurePrototypeSeed y esta rutina quedará inerte.
  */
-const ensureQaV5Storage = () => {
-  if (typeof window === 'undefined') return;
-  if (localStorage.getItem(QA_V5_MARKER) === '1') return;
+const ensureQaV5PrototypeData = () => {
+  const current = appDataGateway.getBootstrapSnapshot({
+    cases: freshCases,
+    receivables: [],
+    settings: initialSettings,
+    auditLogs: []
+  });
 
-  localStorage.setItem('fauna_guarantee_cases_v2', JSON.stringify(freshCases));
-  localStorage.setItem('fauna_receivables_v2', JSON.stringify([]));
-  localStorage.setItem('fauna_audit_logs_v2', JSON.stringify([]));
-  localStorage.setItem(QA_V5_MARKER, '1');
+  appDataGateway.ensurePrototypeSeed?.(QA_V5_MARKER, {
+    cases: freshCases,
+    receivables: [],
+    settings: current.settings,
+    auditLogs: []
+  });
 };
 
 const MainContent: React.FC = () => {
@@ -70,7 +78,7 @@ const MainContent: React.FC = () => {
 };
 
 export default function App() {
-  ensureQaV5Storage();
+  ensureQaV5PrototypeData();
 
   return (
     <AppProvider>
