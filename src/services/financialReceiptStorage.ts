@@ -31,6 +31,13 @@ export interface FinancialReceiptLink {
   createdAt: string;
 }
 
+export interface FinancialReceiptStorageGateway {
+  upload(file: File, context: ReceiptUploadContext): Promise<FinancialReceipt>;
+  registerLink(data: Omit<FinancialReceiptLink, 'id' | 'createdAt'>): Promise<FinancialReceiptLink>;
+  getLinksForCase(caseId: string): Promise<FinancialReceiptLink[]>;
+  open(receipt: FinancialReceipt): Promise<void>;
+}
+
 const openDb = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
   if (typeof indexedDB === 'undefined') {
     reject(new Error('El navegador no soporta almacenamiento persistente de comprobantes.'));
@@ -90,63 +97,81 @@ export const validateFinancialReceiptFile = (file: File): string | null => {
   return null;
 };
 
-/**
- * Adaptador de almacenamiento de comprobantes financieros.
- * Hoy persiste el binario en IndexedDB y guarda solo metadatos/storageKey en el caso.
- * En backend, esta función se reemplaza por un upload HTTP/S3/etc. que devuelva
- * el mismo contrato FinancialReceipt con storageProvider BACKEND y una URL segura.
- */
-export const uploadFinancialReceipt = async (
-  file: File,
-  context: ReceiptUploadContext
-): Promise<FinancialReceipt> => {
-  const validationError = validateFinancialReceiptFile(file);
-  if (validationError) throw new Error(validationError);
+class LocalFinancialReceiptStorageGateway implements FinancialReceiptStorageGateway {
+  async upload(file: File, context: ReceiptUploadContext): Promise<FinancialReceipt> {
+    const validationError = validateFinancialReceiptFile(file);
+    if (validationError) throw new Error(validationError);
 
-  const storageKey = `${context.caseId}/${context.movementKind}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await putBlob(storageKey, file);
+    const storageKey = `${context.caseId}/${context.movementKind}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await putBlob(storageKey, file);
 
-  return {
-    id: `RECPT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    fileName: file.name,
-    mimeType: file.type,
-    size: file.size,
-    storageKey,
-    storageProvider: 'LOCAL_INDEXED_DB',
-    uploadedAt: new Date().toISOString()
-  };
-};
-
-/**
- * Registra la relación entre el comprobante y el hecho financiero.
- * Esta pequeña registry local representa la futura tabla backend
- * financial_receipt_links (case_id, movement_kind, amount, date, receipt_id...).
- */
-export const registerFinancialReceiptLink = (
-  data: Omit<FinancialReceiptLink, 'id' | 'createdAt'>
-): FinancialReceiptLink => {
-  const link: FinancialReceiptLink = {
-    ...data,
-    id: `FRL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    createdAt: new Date().toISOString()
-  };
-  writeLinks([...readLinks(), link]);
-  return link;
-};
-
-export const getFinancialReceiptLinksForCase = (caseId: string): FinancialReceiptLink[] =>
-  readLinks().filter(link => link.caseId === caseId);
-
-export const openFinancialReceipt = async (receipt: FinancialReceipt): Promise<void> => {
-  if (receipt.storageProvider === 'BACKEND' && receipt.url) {
-    window.open(receipt.url, '_blank', 'noopener,noreferrer');
-    return;
+    return {
+      id: `RECPT-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      fileName: file.name,
+      mimeType: file.type,
+      size: file.size,
+      storageKey,
+      storageProvider: 'LOCAL_INDEXED_DB',
+      uploadedAt: new Date().toISOString()
+    };
   }
 
-  const blob = await getBlob(receipt.storageKey);
-  if (!blob) throw new Error('No se encontró el archivo del comprobante en este dispositivo.');
+  async registerLink(
+    data: Omit<FinancialReceiptLink, 'id' | 'createdAt'>
+  ): Promise<FinancialReceiptLink> {
+    const link: FinancialReceiptLink = {
+      ...data,
+      id: `FRL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString()
+    };
+    writeLinks([...readLinks(), link]);
+    return link;
+  }
 
-  const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank', 'noopener,noreferrer');
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  async getLinksForCase(caseId: string): Promise<FinancialReceiptLink[]> {
+    return readLinks().filter(link => link.caseId === caseId);
+  }
+
+  async open(receipt: FinancialReceipt): Promise<void> {
+    if (receipt.storageProvider === 'BACKEND' && receipt.url) {
+      window.open(receipt.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const blob = await getBlob(receipt.storageKey);
+    if (!blob) throw new Error('No se encontró el archivo del comprobante en este dispositivo.');
+
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  }
+}
+
+let configuredGateway: FinancialReceiptStorageGateway = new LocalFinancialReceiptStorageGateway();
+
+/**
+ * Punto de reemplazo para el storage/API de la intranet. Las pantallas siguen
+ * usando las mismas funciones exportadas y no necesitan conocer el backend.
+ */
+export const configureFinancialReceiptStorageGateway = (
+  gateway: FinancialReceiptStorageGateway
+): void => {
+  configuredGateway = gateway;
 };
+
+export const uploadFinancialReceipt = (
+  file: File,
+  context: ReceiptUploadContext
+): Promise<FinancialReceipt> => configuredGateway.upload(file, context);
+
+export const registerFinancialReceiptLink = (
+  data: Omit<FinancialReceiptLink, 'id' | 'createdAt'>
+): Promise<FinancialReceiptLink> => configuredGateway.registerLink(data);
+
+export const getFinancialReceiptLinksForCase = (
+  caseId: string
+): Promise<FinancialReceiptLink[]> => configuredGateway.getLinksForCase(caseId);
+
+export const openFinancialReceipt = (
+  receipt: FinancialReceipt
+): Promise<void> => configuredGateway.open(receipt);
