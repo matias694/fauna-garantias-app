@@ -4,6 +4,8 @@ import { GuaranteeCase, BlockedByReason, RequirementStatus } from '../../types';
 import { formatCLP, getLocalDateInputValue } from '../../utils/formatters';
 import { calculateFundingReadiness, calculateGuaranteeFinances, canConfirmGuaranteeLiquidation } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
+import { FinancialTransactionFields } from '../FinancialTransactionFields';
+import { registerFinancialReceiptLink, uploadFinancialReceipt } from '../../services/financialReceiptStorage';
 import { CheckCircle2, AlertTriangle, FileText, Plus, Banknote, Lock, Clock3, X } from 'lucide-react';
 
 interface LiquidationTabProps {
@@ -29,9 +31,11 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundDate, setRefundDate] = useState(getLocalDateInputValue());
-  const [refundVoucher, setRefundVoucher] = useState('');
+  const [refundReceiptFile, setRefundReceiptFile] = useState<File | null>(null);
   const [refundAccount, setRefundAccount] = useState(guaranteeCase.refund?.destinationAccount || '');
   const [refundNotes, setRefundNotes] = useState('');
+  const [refundError, setRefundError] = useState('');
+  const [refundSaving, setRefundSaving] = useState(false);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const readiness = calculateFundingReadiness(guaranteeCase, settings);
@@ -103,15 +107,66 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
     setShowConfirmModal(false);
   };
 
-  const handleRegisterRefundSubmit = (e: React.FormEvent) => {
+  const openRefundModal = () => {
+    setRefundDate(getLocalDateInputValue());
+    setRefundReceiptFile(null);
+    setRefundAccount(guaranteeCase.refund?.destinationAccount === 'Pendiente de registrar por usuario' ? '' : (guaranteeCase.refund?.destinationAccount || ''));
+    setRefundNotes('');
+    setRefundError('');
+    setRefundSaving(false);
+    setIsRefundModalOpen(true);
+  };
+
+  const handleRegisterRefundSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    registerTenantRefund(guaranteeCase.id, {
-      date: refundDate,
-      voucherName: refundVoucher,
-      destinationAccount: refundAccount,
-      notes: refundNotes
-    });
-    setIsRefundModalOpen(false);
+    setRefundError('');
+
+    if (!refundDate) {
+      setRefundError('Selecciona la fecha real de la devolución.');
+      return;
+    }
+    if (!refundAccount.trim()) {
+      setRefundError('Ingresa la cuenta destino de la devolución.');
+      return;
+    }
+    if (!refundReceiptFile) {
+      setRefundError('Adjunta el comprobante antes de confirmar la devolución.');
+      return;
+    }
+
+    setRefundSaving(true);
+    try {
+      const receipt = await uploadFinancialReceipt(refundReceiptFile, {
+        caseId: guaranteeCase.id,
+        movementKind: 'DEVOLUCION_ARRENDATARIO'
+      });
+
+      registerTenantRefund(guaranteeCase.id, {
+        date: refundDate,
+        voucherName: receipt.fileName,
+        destinationAccount: refundAccount.trim(),
+        notes: refundNotes.trim()
+      });
+
+      registerFinancialReceiptLink({
+        caseId: guaranteeCase.id,
+        movementKind: 'DEVOLUCION_ARRENDATARIO',
+        amount: originalRefund,
+        paymentDate: refundDate,
+        relatedEntityId: guaranteeCase.id,
+        receipt,
+        notes: [
+          `Cuenta destino: ${refundAccount.trim()}`,
+          refundNotes.trim()
+        ].filter(Boolean).join(' · ')
+      });
+
+      setIsRefundModalOpen(false);
+    } catch (error) {
+      setRefundError(error instanceof Error ? error.message : 'No se pudo guardar el comprobante.');
+    } finally {
+      setRefundSaving(false);
+    }
   };
 
   return (
@@ -293,7 +348,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
                 <span className="text-[11px] text-emerald-800">Estado: {guaranteeCase.refund?.status || 'PENDIENTE'}</span>
               </div>
               {guaranteeCase.refund?.status !== 'TRANSFERIDA' && (
-                <button onClick={() => setIsRefundModalOpen(true)} className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer">
+                <button onClick={openRefundModal} className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer">
                   <Banknote className="w-4 h-4" /> Registrar devolución
                 </button>
               )}
@@ -377,32 +432,47 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
       {isRefundModalOpen && isConfirmed && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full p-6 shadow-xl space-y-4">
-            <h3 className="font-bold text-base text-slate-900 border-b border-slate-100 pb-2">Registrar devolución</h3>
-            <form onSubmit={handleRegisterRefundSubmit} className="space-y-3 text-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 max-w-md w-full shadow-xl overflow-hidden max-h-[92vh] overflow-y-auto">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between sticky top-0 z-10">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Monto</label>
-                <input type="text" disabled value={formatCLP(originalRefund)} className="w-full bg-slate-100 border border-slate-200 rounded-lg p-2 font-bold font-mono text-slate-800" />
+                <h3 className="font-bold text-sm">Registrar devolución</h3>
+                <p className="text-[11px] text-slate-300 mt-0.5">Devolución de garantía al arrendatario</p>
               </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Fecha *</label>
-                <input type="date" required value={refundDate} onChange={(e) => setRefundDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Cuenta destino</label>
-                <input type="text" value={refundAccount} onChange={(e) => setRefundAccount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Referencia / comprobante</label>
-                <input type="text" value={refundVoucher} onChange={(e) => setRefundVoucher(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Observaciones</label>
-                <textarea rows={2} value={refundNotes} onChange={(e) => setRefundNotes(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2" />
-              </div>
+              <button type="button" onClick={() => setIsRefundModalOpen(false)} className="p-1.5 text-slate-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
+            </div>
+
+            <form onSubmit={handleRegisterRefundSubmit} className="p-5 space-y-4 text-xs">
+              <FinancialTransactionFields
+                amount={originalRefund}
+                amountReadOnly
+                date={refundDate}
+                onDateChange={setRefundDate}
+                receiptFile={refundReceiptFile}
+                onReceiptFileChange={setRefundReceiptFile}
+                notes={refundNotes}
+                onNotesChange={setRefundNotes}
+                receiptLabel="Comprobante de transferencia"
+              >
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Cuenta destino *</label>
+                  <input
+                    type="text"
+                    required
+                    value={refundAccount}
+                    onChange={(e) => setRefundAccount(e.target.value)}
+                    placeholder="Banco · tipo de cuenta · número · titular"
+                    className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5"
+                  />
+                </div>
+              </FinancialTransactionFields>
+
+              {refundError && <p className="text-[11px] font-semibold text-rose-700">{refundError}</p>}
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button type="button" onClick={() => setIsRefundModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-emerald-700 text-white font-bold rounded-xl cursor-pointer">Confirmar devolución</button>
+                <button type="button" disabled={refundSaving} onClick={() => setIsRefundModalOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer disabled:opacity-60">Cancelar</button>
+                <button type="submit" disabled={refundSaving} className="px-4 py-2 bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded-xl cursor-pointer">
+                  {refundSaving ? 'Guardando…' : 'Confirmar devolución'}
+                </button>
               </div>
             </form>
           </div>
