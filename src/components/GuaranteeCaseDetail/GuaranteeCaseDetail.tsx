@@ -110,7 +110,7 @@ export const GuaranteeCaseDetail: React.FC<GuaranteeCaseDetailProps> = ({ caseId
         </button>
 
         <button onClick={() => setActiveTab('liquidation')} className={tabClass('liquidation')}>
-          <FileCheck className="w-4 h-4 text-purple-400" />
+          <FileCheck className="w-4 h-4 text-emerald-500" />
           <span>Liquidación</span>
         </button>
 
