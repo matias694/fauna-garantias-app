@@ -1,12 +1,13 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { Plus } from 'lucide-react';
+import { Menu, Plus } from 'lucide-react';
 
 interface HeaderProps {
   onOpenNewModal: () => void;
+  onOpenMobileMenu?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenNewModal }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenNewModal, onOpenMobileMenu }) => {
   const { activeView, userRole } = useApp();
 
   let title = 'Dashboard';
@@ -25,14 +26,25 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewModal }) => {
   const showNewGuarantee = activeView === 'dashboard' || activeView === 'guarantees';
 
   return (
-    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 py-4 sticky top-0 z-20 shadow-2xs">
-      <div className="flex items-center justify-between gap-4 max-w-7xl mx-auto">
-        <div className="min-w-0">
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight leading-none">{title}</h2>
-          <p className="text-xs text-slate-500 font-medium mt-1.5">{subtitle}</p>
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 py-3.5 sm:py-4 sticky top-0 z-20 shadow-2xs">
+      <div className="flex items-center justify-between gap-2 sm:gap-4 max-w-7xl mx-auto">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={onOpenMobileMenu}
+            aria-label="Abrir menú"
+            className="lg:hidden p-2.5 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl cursor-pointer shrink-0"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-none truncate">{title}</h2>
+            <p className="hidden xs:block text-[11px] sm:text-xs text-slate-500 font-medium mt-1.5 truncate">{subtitle}</p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <div className="hidden sm:flex items-center gap-2.5 px-3 py-2 bg-slate-50 rounded-xl border border-slate-200">
             <div className="w-8 h-8 rounded-lg bg-[#1E382B] text-white flex items-center justify-center font-bold text-xs shadow-2xs">
               FP
@@ -48,10 +60,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewModal }) => {
           {showNewGuarantee && (
             <button
               onClick={onOpenNewModal}
-              className="bg-[#1E382B] hover:bg-[#14261d] text-white px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
+              aria-label="Nueva garantía"
+              className="bg-[#1E382B] hover:bg-[#14261d] text-white p-2.5 sm:px-4 sm:py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
             >
               <Plus className="w-4 h-4 text-emerald-400" />
-              <span>Nueva garantía</span>
+              <span className="hidden sm:inline">Nueva garantía</span>
             </button>
           )}
         </div>
