@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { GuaranteeCase } from '../types';
 import { formatCLP, calculateDaysDifference, parseLocalDate } from '../utils/formatters';
 import { calculateFundingReadiness } from '../utils/calculations';
+import { getEffectiveNextManagement } from '../utils/nextManagement';
 import {
   CheckCircle2,
   Wrench,
@@ -34,7 +35,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const formatShortDateStr = (dateStr?: string) => {
-    if (!dateStr) return 'Sin fecha';
+    if (!dateStr) return 'Ahora';
     if (isTodayDate(dateStr)) return 'Hoy';
     if (isOverdue(dateStr)) {
       const d = parseLocalDate(dateStr)!;
@@ -78,7 +79,7 @@ export const Dashboard: React.FC = () => {
     );
     const readiness = fundingByCase.get(c.id);
     const isBlocked = c.blockedBy !== 'SIN_BLOQUEO';
-    const missingManagement = !c.nextManagement || !c.nextManagement.trim();
+    const missingRecordedManagement = !c.nextManagement || !c.nextManagement.trim();
 
     if (managementOverdue) {
       return { priority: 1, reason: 'Próxima gestión vencida' };
@@ -103,8 +104,8 @@ export const Dashboard: React.FC = () => {
     if (c.liquidationStatus === 'LISTA') {
       return { priority: 6, reason: 'Lista para confirmar liquidación' };
     }
-    if (missingManagement) {
-      return { priority: 7, reason: 'Sin próxima gestión registrada' };
+    if (missingRecordedManagement) {
+      return { priority: 7, reason: 'Próxima gestión pendiente de programar' };
     }
 
     return null;
@@ -159,14 +160,14 @@ export const Dashboard: React.FC = () => {
 
       <section className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
         <div className="p-4 bg-[#1E382B] text-white flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-amber-400/20 text-amber-300 rounded-lg"><AlertTriangle className="w-4 h-4" /></div>
-            <div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 bg-amber-400/20 text-amber-300 rounded-lg shrink-0"><AlertTriangle className="w-4 h-4" /></div>
+            <div className="min-w-0">
               <h3 className="font-extrabold text-sm tracking-tight">Casos que requieren atención</h3>
               <p className="text-[11px] text-emerald-200/80 font-medium">Tu lista de trabajo: solo situaciones que requieren una acción concreta</p>
             </div>
           </div>
-          <span className="text-xs bg-emerald-900/90 border border-emerald-700/60 px-3 py-1 rounded-full font-bold text-emerald-200">
+          <span className="text-xs bg-emerald-900/90 border border-emerald-700/60 px-3 py-1 rounded-full font-bold text-emerald-200 shrink-0">
             {prioritizedCases.length} pendientes
           </span>
         </div>
@@ -180,53 +181,64 @@ export const Dashboard: React.FC = () => {
         ) : (
           <div className="divide-y divide-slate-100">
             {prioritizedCases.map(({ caseObj, category }) => {
-              const overdueManagement = Boolean(caseObj.nextManagementDate && isOverdue(caseObj.nextManagementDate));
-              const formattedDate = formatShortDateStr(caseObj.nextManagementDate);
+              const nextManagement = getEffectiveNextManagement(caseObj, settings);
+              const overdueManagement = Boolean(nextManagement.date && isOverdue(nextManagement.date));
+              const formattedDate = nextManagement.source === 'SYSTEM'
+                ? 'Ahora'
+                : formatShortDateStr(nextManagement.date);
               const isReadyToClose = Boolean(caseObj.isCompleted);
 
               return (
-                <div key={caseObj.id} className="p-4 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-start gap-3 min-w-[280px]">
+                <div
+                  key={caseObj.id}
+                  className="p-4 hover:bg-slate-50/80 transition-colors grid grid-cols-1 xl:grid-cols-[minmax(300px,0.9fr)_minmax(520px,1.45fr)_132px] xl:items-center gap-4 text-xs"
+                >
+                  <div className="flex items-start gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-[#1E382B] shrink-0 mt-0.5">
                       <Building2 className="w-4 h-4" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <strong className="text-[#1E382B] font-extrabold text-sm">{caseObj.id}</strong>
-                        <span className="text-slate-800 font-semibold">{caseObj.propertyAddress}, {caseObj.propertyUnit}</span>
+                        <strong className="text-[#1E382B] font-extrabold text-sm shrink-0">{caseObj.id}</strong>
+                        <span className="text-slate-800 font-semibold min-w-0">{caseObj.propertyAddress}, {caseObj.propertyUnit}</span>
                       </div>
                       <div className="mt-1 flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border inline-flex items-center gap-1 ${isReadyToClose ? 'bg-emerald-100 text-emerald-900 border-emerald-200' : 'bg-rose-100 text-rose-900 border-rose-200'}`}>
-                          {isReadyToClose ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <ShieldAlert className="w-3 h-3 text-rose-600" />}
-                          {category.reason}
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold border inline-flex items-center gap-1 max-w-full ${isReadyToClose ? 'bg-emerald-100 text-emerald-900 border-emerald-200' : 'bg-rose-100 text-rose-900 border-rose-200'}`}>
+                          {isReadyToClose ? <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" /> : <ShieldAlert className="w-3 h-3 text-rose-600 shrink-0" />}
+                          <span>{category.reason}</span>
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex-1 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Próxima gestión</span>
-                      <p className="font-semibold text-slate-800 text-xs">
-                        {caseObj.nextManagement || <span className="text-rose-500 italic">Pendiente definir gestión</span>}
+                  <div className="bg-slate-50 rounded-xl border border-slate-200/60 overflow-hidden grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_140px_220px] min-w-0">
+                    <div className="p-3 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Siguiente acción</span>
+                      <p className="font-semibold text-slate-800 text-xs mt-0.5 break-words">
+                        {nextManagement.action}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0 text-slate-600">
-                      <div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Fecha</span>
-                        <span className={`font-bold ${overdueManagement ? 'text-rose-600' : 'text-slate-800'}`}>{formattedDate}</span>
-                      </div>
-                      <div className="border-l border-slate-200 pl-3">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase block">Responsable</span>
-                        <span className="font-semibold text-slate-800 inline-flex items-center gap-1">
-                          <UserCheck className="w-3 h-3 text-[#2D8B73]" />
-                          {caseObj.nextManagementResponsible || caseObj.responsible || 'Sin asignar'}
-                        </span>
-                      </div>
+
+                    <div className="p-3 border-t sm:border-t-0 sm:border-l border-slate-200 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Fecha</span>
+                      <span className={`font-bold block mt-0.5 ${overdueManagement ? 'text-rose-600' : nextManagement.source === 'SYSTEM' ? 'text-emerald-700' : 'text-slate-800'}`}>
+                        {formattedDate}
+                      </span>
+                    </div>
+
+                    <div className="p-3 border-t sm:border-t-0 sm:border-l border-slate-200 min-w-0">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Responsable</span>
+                      <span className="font-semibold text-slate-800 flex items-start gap-1 mt-0.5 min-w-0">
+                        <UserCheck className="w-3 h-3 text-[#2D8B73] shrink-0 mt-0.5" />
+                        <span className="break-words min-w-0">{nextManagement.responsible}</span>
+                      </span>
                     </div>
                   </div>
 
-                  <button onClick={() => handleSelectCase(caseObj.id)} className="px-3.5 py-2 bg-[#1E382B] hover:bg-[#14261d] text-white rounded-xl font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0">
+                  <button
+                    onClick={() => handleSelectCase(caseObj.id)}
+                    className="w-full xl:w-[132px] px-3.5 py-2.5 bg-[#1E382B] hover:bg-[#14261d] text-white rounded-xl font-bold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                  >
                     Ver caso <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
                   </button>
                 </div>
