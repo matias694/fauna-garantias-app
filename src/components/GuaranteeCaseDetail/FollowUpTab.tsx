@@ -207,7 +207,7 @@ export const FollowUpTab: React.FC<FollowUpTabProps> = ({ guaranteeCase }) => {
                 <div key={item.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${item.area === 'Garantia' ? 'bg-purple-100 text-purple-900 border-purple-200' : item.area === 'Reparacion' ? 'bg-amber-100 text-amber-900 border-amber-200' : 'bg-blue-100 text-blue-900 border-blue-200'}`}>[{areaLabel(item.area)}]</span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${item.area === 'Garantia' ? 'bg-emerald-100 text-emerald-900 border-emerald-200' : item.area === 'Reparacion' ? 'bg-amber-100 text-amber-900 border-amber-200' : 'bg-slate-200 text-slate-700 border-slate-300'}`}>[{areaLabel(item.area)}]</span>
                       <span className="text-xs font-bold text-slate-900 flex items-center gap-1"><User className="w-3.5 h-3.5 text-slate-400" />{item.userName || item.user}</span>
                       {item.editedAt && <span className="text-[10px] text-slate-400 font-medium">Editado</span>}
                     </div>
