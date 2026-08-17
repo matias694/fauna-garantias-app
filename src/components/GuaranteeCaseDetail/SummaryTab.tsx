@@ -132,7 +132,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
           <div className="flex flex-wrap items-center gap-2">
             <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
               <span className="text-[9px] uppercase font-bold text-slate-400 mr-1.5">Etapa actual</span>
-              <strong className={`text-[11px] ${isConfirmed || guaranteeCase.isCompleted ? 'text-emerald-700' : guaranteeCase.liquidationStatus === 'LISTA' ? 'text-purple-700' : 'text-slate-700'}`}>
+              <strong className={`text-[11px] ${isConfirmed || guaranteeCase.isCompleted ? 'text-emerald-700' : guaranteeCase.liquidationStatus === 'LISTA' ? 'text-emerald-700' : 'text-slate-700'}`}>
                 {stageLabel}
               </strong>
             </div>
