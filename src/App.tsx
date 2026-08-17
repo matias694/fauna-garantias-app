@@ -40,13 +40,20 @@ const ensureQaV5PrototypeData = () => {
 const MainContent: React.FC = () => {
   const { activeView, selectedCaseId } = useApp();
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen bg-slate-100 font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
-      <Sidebar />
+      <Sidebar
+        isMobileOpen={isMobileSidebarOpen}
+        onMobileClose={() => setIsMobileSidebarOpen(false)}
+      />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
-        <Header onOpenNewModal={() => setIsNewModalOpen(true)} />
+        <Header
+          onOpenNewModal={() => setIsNewModalOpen(true)}
+          onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
+        />
 
         <main className="flex-1 pb-12">
           {activeView === 'dashboard' && <Dashboard />}
