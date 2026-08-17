@@ -7,8 +7,6 @@ import { GuaranteesList } from './components/GuaranteesList';
 import { GuaranteeCaseDetail } from './components/GuaranteeCaseDetail/GuaranteeCaseDetail';
 import { ReceivablesList } from './components/ReceivablesList';
 import { SettingsView } from './components/SettingsView';
-import { SensitiveMetricsPanel } from './components/SensitiveMetricsPanel';
-import { SensitiveMetricsAccessSettings } from './components/SensitiveMetricsAccessSettings';
 import { NewGuaranteeModal } from './components/NewGuaranteeModal';
 import { LegacyReceivableReconciler } from './components/LegacyReceivableReconciler';
 import { CompletedCaseSync } from './components/CompletedCaseSync';
@@ -51,21 +49,11 @@ const MainContent: React.FC = () => {
         <Header onOpenNewModal={() => setIsNewModalOpen(true)} />
 
         <main className="flex-1 pb-12">
-          {activeView === 'dashboard' && (
-            <>
-              <Dashboard />
-              <SensitiveMetricsPanel />
-            </>
-          )}
+          {activeView === 'dashboard' && <Dashboard />}
           {activeView === 'guarantees' && <GuaranteesList onOpenNewModal={() => setIsNewModalOpen(true)} />}
           {activeView === 'case-detail' && <GuaranteeCaseDetail caseId={selectedCaseId || ''} />}
           {activeView === 'receivables' && <ReceivablesList />}
-          {activeView === 'settings' && (
-            <>
-              <SettingsView />
-              <SensitiveMetricsAccessSettings />
-            </>
-          )}
+          {activeView === 'settings' && <SettingsView />}
         </main>
       </div>
 
