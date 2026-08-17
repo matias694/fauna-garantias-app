@@ -4,6 +4,7 @@ import { GuaranteeCase } from '../../types';
 import { formatCLP, formatDate, calculateDaysDifference, parseFormattedDateToInput, addDaysToDate } from '../../utils/formatters';
 import { calculateFundingReadiness, calculateGuaranteeFinances } from '../../utils/calculations';
 import { getSettlementState } from '../../utils/settlementState';
+import { getEffectiveNextManagement } from '../../utils/nextManagement';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Edit3 } from 'lucide-react';
 
 interface SummaryTabProps {
@@ -12,19 +13,21 @@ interface SummaryTabProps {
 
 export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
   const { addFollowUpComment, settings, receivables } = useApp();
+  const effectiveNextManagement = getEffectiveNextManagement(guaranteeCase, settings);
 
-  const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || '');
+  const [nextManagement, setNextManagement] = useState(guaranteeCase.nextManagement || effectiveNextManagement.action);
   const [nextDate, setNextDate] = useState(parseFormattedDateToInput(guaranteeCase.nextManagementDate || ''));
-  const [nextResp, setNextResp] = useState(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
+  const [nextResp, setNextResp] = useState(effectiveNextManagement.responsible);
   const [editingNextManagement, setEditingNextManagement] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
-    setNextManagement(guaranteeCase.nextManagement || '');
+    const effective = getEffectiveNextManagement(guaranteeCase, settings);
+    setNextManagement(guaranteeCase.nextManagement || effective.action);
     setNextDate(parseFormattedDateToInput(guaranteeCase.nextManagementDate || ''));
-    setNextResp(guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || '');
+    setNextResp(effective.responsible);
     if (guaranteeCase.isCompleted || guaranteeCase.isClosed) setEditingNextManagement(false);
-  }, [guaranteeCase.id, guaranteeCase.nextManagement, guaranteeCase.nextManagementDate, guaranteeCase.nextManagementResponsible, guaranteeCase.responsible, guaranteeCase.isCompleted, guaranteeCase.isClosed]);
+  }, [guaranteeCase, settings]);
 
   const fin = calculateGuaranteeFinances(guaranteeCase, settings);
   const readiness = calculateFundingReadiness(guaranteeCase, settings);
@@ -109,6 +112,13 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
     }
 
     setEditingNextManagement(false);
+  };
+
+  const handleStartEditingNextManagement = () => {
+    setNextManagement(guaranteeCase.nextManagement || effectiveNextManagement.action);
+    setNextDate(parseFormattedDateToInput(guaranteeCase.nextManagementDate || ''));
+    setNextResp(effectiveNextManagement.responsible);
+    setEditingNextManagement(true);
   };
 
   const formatClosedAt = (value?: string) => {
@@ -209,7 +219,7 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
         ) : editingNextManagement ? (
           <form onSubmit={handleSaveNextManagement} className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
             <div className="md:col-span-2">
-              <label className="block text-[10px] font-semibold text-slate-500 mb-1">Próxima gestión</label>
+              <label className="block text-[10px] font-semibold text-slate-500 mb-1">Siguiente acción</label>
               <input type="text" required value={nextManagement} onChange={(e) => setNextManagement(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-xs" />
             </div>
             <div>
@@ -231,12 +241,14 @@ export const SummaryTab: React.FC<SummaryTabProps> = ({ guaranteeCase }) => {
         ) : (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="min-w-0">
-              <span className="text-[9px] uppercase font-bold text-slate-400 block">Próxima gestión</span>
-              <strong className="text-sm text-slate-800 block truncate">{guaranteeCase.nextManagement || 'Sin próxima gestión programada'}</strong>
-              <span className="text-[10px] text-slate-500">{guaranteeCase.nextManagementDate ? formatDate(guaranteeCase.nextManagementDate) : 'Sin fecha'} · {guaranteeCase.nextManagementResponsible || guaranteeCase.responsible || 'Sin responsable'}</span>
+              <span className="text-[9px] uppercase font-bold text-slate-400 block">Siguiente acción</span>
+              <strong className="text-sm text-slate-800 block">{effectiveNextManagement.action}</strong>
+              <span className="text-[10px] text-slate-500">
+                {effectiveNextManagement.date ? formatDate(effectiveNextManagement.date) : 'Ahora'} · {effectiveNextManagement.responsible}
+              </span>
             </div>
             {!guaranteeCase.isCompleted && (
-              <button type="button" onClick={() => setEditingNextManagement(true)} className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer">
+              <button type="button" onClick={handleStartEditingNextManagement} className="shrink-0 px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer">
                 <Edit3 className="w-3.5 h-3.5" /> Editar
               </button>
             )}
