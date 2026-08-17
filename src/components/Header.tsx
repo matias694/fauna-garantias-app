@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenNewModal, onOpenMobileMenu
 
           <div className="min-w-0">
             <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-none truncate">{title}</h2>
-            <p className="hidden xs:block text-[11px] sm:text-xs text-slate-500 font-medium mt-1.5 truncate">{subtitle}</p>
+            <p className="hidden sm:block text-xs text-slate-500 font-medium mt-1.5 truncate">{subtitle}</p>
           </div>
         </div>
 
