@@ -175,7 +175,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Estado de la liquidación</span>
-            <strong className={`text-sm ${isConfirmed ? 'text-purple-700' : canConfirm ? 'text-emerald-700' : 'text-amber-700'}`}>{stageLabel}</strong>
+            <strong className={`text-sm ${isConfirmed ? 'text-emerald-700' : canConfirm ? 'text-emerald-700' : 'text-amber-700'}`}>{stageLabel}</strong>
           </div>
 
           <div className="flex items-center gap-2">
@@ -219,8 +219,8 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
         </div>
 
         {isConfirmed && (
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-900 flex items-start gap-2.5">
-            <Lock className="w-4 h-4 mt-0.5 shrink-0 text-purple-700" />
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 flex items-start gap-2.5">
+            <Lock className="w-4 h-4 mt-0.5 shrink-0 text-emerald-700" />
             <span><strong>Liquidación confirmada.</strong> El checklist, los cargos/abonos y el resultado original quedaron congelados en el documento emitido.</span>
           </div>
         )}
@@ -302,8 +302,8 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
               </div>
             )}
             {isConfirmed && (
-              <span className="text-xs text-purple-900 font-bold flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-purple-600" /> Resultado definitivo confirmado
+              <span className="text-xs text-emerald-900 font-bold flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-emerald-600" /> Resultado definitivo confirmado
               </span>
             )}
           </div>
@@ -320,7 +320,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
                 onClick={handleConfirmLiquidation}
                 disabled={!canConfirm}
                 className={`px-5 py-2 rounded-xl font-bold text-xs shadow-xs inline-flex items-center gap-2 ${
-                  canConfirm ? 'bg-purple-700 hover:bg-purple-800 text-white cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  canConfirm ? 'bg-[#1E382B] hover:bg-[#14261d] text-white cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 }`}
               >
                 <Lock className="w-4 h-4" /> Confirmar liquidación
@@ -399,7 +399,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
             <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-purple-700 rounded-xl"><Lock className="w-4 h-4" /></div>
+                <div className="p-2 bg-[#1E382B] rounded-xl"><Lock className="w-4 h-4" /></div>
                 <div>
                   <h3 className="font-bold text-sm">Confirmar liquidación</h3>
                   <p className="text-[11px] text-slate-300">{guaranteeCase.id} · resultado definitivo</p>
@@ -422,7 +422,7 @@ export const LiquidationTab: React.FC<LiquidationTabProps> = ({ guaranteeCase, o
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
               <button type="button" onClick={() => setShowConfirmModal(false)} className="px-4 py-2 border border-slate-300 text-slate-700 font-bold rounded-xl cursor-pointer">Cancelar</button>
-              <button type="button" onClick={confirmLiquidation} className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5">
+              <button type="button" onClick={confirmLiquidation} className="px-5 py-2 bg-[#1E382B] hover:bg-[#14261d] text-white font-bold rounded-xl cursor-pointer inline-flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5" /> Confirmar liquidación
               </button>
             </div>
